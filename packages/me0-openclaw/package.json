@@ -1,0 +1,14 @@
+{
+  "name": "me0-openclaw",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "dependencies": {
+    "me0-core": "workspace:*"
+  },
+  "devDependencies": {
+    "bun-types": "^1.1.0",
+    "mongodb-memory-server": "^10.1.3"
+  }
+}
