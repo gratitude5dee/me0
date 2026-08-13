@@ -3,7 +3,9 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { Me0Engine, MemoryKind, MemoryTier, OperationContext, Store } from "me0-core";
 
-export const DEFAULT_OPENCLAW_WORKSPACE = join(homedir(), ".openclaw", "workspace");
+export function defaultOpenClawWorkspace(): string {
+  return join(process.env.OPENCLAW_HOME ?? join(homedir(), ".openclaw"), "workspace");
+}
 
 const DAILY_LOG = /^(\d{4}-\d{2}-\d{2})(-[\w-]+)?\.md$/;
 

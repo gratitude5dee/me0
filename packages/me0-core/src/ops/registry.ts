@@ -215,6 +215,28 @@ export const operations: Operation[] = [
     handler: (e, ctx) => e.whoami(ctx),
   },
   {
+    name: "push",
+    description:
+      "Gated per-turn ambient recall for a user prompt: confidence-gated (>=0.7 default), capped per turn, deduped against memories already surfaced this session.",
+    scope: "read",
+    localOnly: true,
+    inputSchema: {
+      type: "object",
+      properties: { prompt: str, episode_id: str },
+      required: ["prompt"],
+    },
+    handler: (e, ctx, a) => e.push(ctx, a),
+  },
+  {
+    name: "dream",
+    description:
+      "Consolidation pass: purge expired soft-deletes, dedupe memories, heat-based tier promotion/demotion, recompile identity card, refresh cached packs.",
+    scope: "admin",
+    localOnly: true,
+    inputSchema: { type: "object", properties: {} },
+    handler: (e, ctx) => e.dream(ctx),
+  },
+  {
     name: "me0_stats",
     description: "Memory counts and health.",
     scope: "read",

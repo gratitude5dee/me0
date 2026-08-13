@@ -19,6 +19,13 @@ Start a task in Claude Code, hit your rate limit, open Codex — and the second 
 - **Adapters** — Claude Code plugin (SessionStart/SessionEnd hooks inject the context pack and close episodes) and Codex (`config.toml` MCP entry + `AGENTS.md` preamble), wired automatically by `me0 init`.
 - **Skills** — `me0`, `me0-handoff`, `me0-setup`.
 
+## What's in v0.2 (core)
+
+- **Hybrid retrieval** — `recall` fuses three arms (text index, keyword, entity/alias graph) with reciprocal rank fusion, a content-word precision gate (abstains instead of guessing), and opportunistic utility weights from the `predictions` collection. App-level fusion keeps local deployments working; native `$rankFusion` covers the same shape on MongoDB 8.1+/Atlas.
+- **Gated push** (`push` verb + `me0 hook prompt` UserPromptSubmit hook) — per-turn ambient recall: confidence-gated (default ≥0.7), capped (default ≤3), and suppressed for memories already surfaced this session; every push is logged to `retrievals`.
+- **Nightly dream** (`dream` verb, `me0 dream`) — hard-purge of soft-deletes past 72h, normalized-text dedupe (earliest wins, later ones superseded), heat-based tier promotion/demotion, identity-card recompilation from core memories, cached global pack refresh, audited.
+- **me0-bench** — hermetic evaluation harness (synthetic persona): recall P@1, adversarial abstention, push false-fire/hit rates, pack budget adherence, cross-harness handoff continuity. `bun test` runs it; `me0-bench` scores a live deployment.
+
 ## Quickstart
 
 ```bash
@@ -64,6 +71,33 @@ me0 import-openclaw --dir /path/to/workspace
 ```
 
 Imports `MEMORY.md` (facts), `USER.md` (preferences), `SOUL.md` (beliefs) as standing memories and `memory/YYYY-MM-DD*.md` daily logs as ended episodes, all with `harness: "openclaw"` provenance.
+
+### pi adapter (v0.2)
+
+pi has no built-in MCP, so me0 ships a native pi extension (`extensions/pi/me0.ts`) that registers `memory_*` tools (recall, remember, entity, context_pack, delta, episode_recall, handoff, whoami, me0_stats) by delegating to the me0-core operation registry with `harness: "pi"`. It injects the context pack at session start, logs tool calls into the active episode, and closes the episode on shutdown — all fire-and-forget and fail-open. `me0 init` detects `~/.pi/agent/` and installs the extension into `~/.pi/agent/extensions/`.
+
+Backfill past pi sessions (deterministic, no LLM, idempotent — re-running never duplicates):
+
+```bash
+me0 import-pi                 # walks ~/.pi/agent/sessions/**/*.jsonl
+me0 import-pi --dir /path/to/sessions
+```
+
+### Backfill importers (migration path)
+
+Bring your existing agent context with you — deterministically, no LLM:
+
+```bash
+# CLAUDE.md / AGENTS.md / MEMORY.md / USER.md / SOUL.md → typed memories
+# (walks up from cwd + checks ~, ~/.claude, ~/.codex; or pass explicit paths)
+me0 import-context [paths...]
+
+# Claude Code auto-memory (projects/*/MEMORY.md etc.) + session transcripts
+# (projects/*/*.jsonl) → memories + episodes/events
+me0 import-claude [--dir ~/.claude]
+```
+
+Markdown headings become concept-entity topic hints; bullets/paragraphs become individual memories with kind heuristics (`prefer/always/never` → preference, `decided/decision` → decision, imperative how-tos → procedure, else fact). Every import is provenance-stamped (`method: "deterministic"`, confidence 0.6, source file recorded) and idempotent — re-imports dedupe on normalized text and transcripts key on session id (NOOP on duplicate).
 
 ## Design principles (short form)
 

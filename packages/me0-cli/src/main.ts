@@ -7,28 +7,35 @@ import {
   type OperationContext,
   type Store,
   connect,
+  discoverContextFiles,
   ensureCollections,
+  importClaudeDir,
+  importContextFiles,
   invoke,
   operations,
 } from "me0-core";
 import { configDir, loadConfig, saveConfig } from "./config.js";
-import { DEFAULT_OPENCLAW_WORKSPACE, importOpenClawWorkspace } from "./import-openclaw.js";
+import { defaultOpenClawWorkspace, importOpenClawWorkspace } from "./import-openclaw.js";
 import { openclawDir, wireOpenClaw } from "./openclaw.js";
+import { defaultPiSessionsDir, importPiSessions, wirePi } from "./pi.js";
 
 const HELP = `me0 — the zeroth memory layer
 
 usage: me0 <command> [flags]
 
 commands:
-  init      provision storage, wire harnesses (Claude Code, Codex, OpenClaw), seed identity
+  init      provision storage, wire harnesses (Claude Code, Codex, pi, OpenClaw), seed identity
   doctor    diagnose config, storage, and harness wiring
   verify    end-to-end write → recall → pack round-trip (exit 0 = healthy)
   export    dump all memory as JSONL to stdout or --out <dir>
   import    load a me0 export (JSONL) from --in <file>
+  import-pi backfill pi JSONL session trees [--dir ~/.pi/agent/sessions]
+  import-context  backfill CLAUDE.md/AGENTS.md/MEMORY.md/USER.md/SOUL.md into memories
+  import-claude   backfill ~/.claude auto-memory + session transcripts (--dir to override)
   import-openclaw  backfill an OpenClaw workspace (MEMORY.md, memory/*.md, USER.md, SOUL.md) [--dir <workspace>]
-  dream     consolidation pass: purge expired soft-deletes, decay tiers
+  dream     consolidation pass: purge, dedupe, decay tiers, recompile cards, refresh packs
   op        invoke any verb directly: me0 op <name> '<json-args>'
-  hook      harness hook entrypoint: me0 hook <session-start|session-end> [json]
+  hook      harness hook entrypoint: me0 hook <session-start|prompt|session-end> [json]
 
 flags:
   --uri <mongodb-uri>   override MongoDB URI
@@ -114,6 +121,9 @@ async function cmdInit(args: string[]) {
   } else {
     console.log("codex not detected (~/.codex missing) — skipped");
   }
+
+  // pi wiring
+  for (const line of wirePi()) console.log(line);
 
   // OpenClaw wiring
   wireOpenClaw(uri, userId);
@@ -234,7 +244,7 @@ async function cmdImportOpenClaw(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
   const userId = flag(args, "--user") ?? cfg.user_id;
-  const dir = flag(args, "--dir") ?? DEFAULT_OPENCLAW_WORKSPACE;
+  const dir = flag(args, "--dir") ?? defaultOpenClawWorkspace();
   if (!existsSync(dir)) {
     console.error(`import-openclaw: workspace not found: ${dir} (pass --dir <workspace>)`);
     process.exit(1);
@@ -250,23 +260,78 @@ async function cmdImportOpenClaw(args: string[]) {
   });
 }
 
+async function cmdImportPi(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const dir = flag(args, "--dir") ?? defaultPiSessionsDir();
+  if (!existsSync(dir)) {
+    console.error(`pi sessions directory not found: ${dir}`);
+    process.exit(1);
+  }
+  await withEngine(uri, async (engine, db) => {
+    const ctx = ctxFor(userId);
+    ctx.harness = "pi";
+    await engine.ensureUser(ctx);
+    const stats = await importPiSessions(db, ctx, dir);
+    console.log(
+      `import-pi: ${stats.imported} episodes (+${stats.events} events) imported, ${stats.skipped} already present, ${stats.files} files scanned`,
+    );
+  });
+}
+
+async function cmdImportContext(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const flagValues = new Set([flag(args, "--uri"), flag(args, "--user")].filter(Boolean));
+  const paths = args.filter((a) => !a.startsWith("--") && !flagValues.has(a));
+  const files = paths.length > 0 ? paths : discoverContextFiles(process.cwd());
+  if (files.length === 0) {
+    console.log("no context files found (CLAUDE.md, AGENTS.md, MEMORY.md, USER.md, SOUL.md)");
+    return;
+  }
+  await withEngine(uri, async (engine, db) => {
+    const results = await importContextFiles(engine, db, ctxFor(userId), files);
+    for (const r of results) {
+      const kinds = Object.entries(r.kinds)
+        .map(([k, n]) => `${n} ${k}`)
+        .join(", ");
+      console.log(
+        `${r.file}: +${r.added} memories${kinds ? ` (${kinds})` : ""}, ${r.skipped} duplicates skipped`,
+      );
+    }
+  });
+}
+
+async function cmdImportClaude(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const dir = flag(args, "--dir") ?? join(homedir(), ".claude");
+  if (!existsSync(dir)) {
+    console.log(`claude dir not found: ${dir} — nothing to import`);
+    return;
+  }
+  await withEngine(uri, async (engine, db) => {
+    const r = await importClaudeDir(engine, db, ctxFor(userId), dir);
+    const added = r.transcripts.filter((t) => t.action === "ADD");
+    console.log(
+      `memories: +${r.memories_added} (${r.memories_skipped} duplicates skipped); episodes: +${added.length} (${
+        r.transcripts.length - added.length
+      } already imported), ${added.reduce((n, t) => n + t.events, 0)} events`,
+    );
+  });
+}
+
 async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
-  await withEngine(uri, async (engine, db) => {
-    const purged = await engine.purgeExpired();
-    const staleCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
-    const demoted = await db.collection("memories").updateMany(
-      {
-        tier: "recall",
-        deleted_at: null,
-        "access.count": 0,
-        valid_from: { $lt: staleCutoff },
-      },
-      { $set: { tier: "archive" } },
-    );
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  await withEngine(uri, async (engine) => {
+    const report = await engine.dream(ctxFor(userId));
     console.log(
-      `dream: purged ${purged} expired, demoted ${demoted.modifiedCount} stale to archive`,
+      `dream: purged ${report.purged}, deduped ${report.deduped}, promoted ${report.promoted}, demoted ${report.demoted}, identity_card ${report.identity_card_refreshed ? "refreshed" : "unchanged"}, packs refreshed ${report.packs_refreshed}`,
     );
   });
 }
@@ -285,6 +350,22 @@ async function cmdOp(args: string[]) {
     const result = await invoke(engine, ctxFor(userId), name, JSON.parse(jsonArg));
     console.log(JSON.stringify(result, null, 2));
   });
+}
+
+async function hookPayload(args: string[]): Promise<Record<string, unknown>> {
+  if (args[1] && !args[1].startsWith("--")) return JSON.parse(args[1]);
+  if (!process.stdin.isTTY) {
+    try {
+      const text = await Promise.race([
+        new Response(Bun.stdin.stream()).text(),
+        new Promise<string>((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]);
+      if (text.trim()) return JSON.parse(text);
+    } catch {
+      // fall through: hooks fail open
+    }
+  }
+  return {};
 }
 
 async function cmdHook(args: string[]) {
@@ -312,13 +393,32 @@ async function cmdHook(args: string[]) {
             },
           }),
         );
+      } else if (event === "prompt") {
+        const payload = await hookPayload(args);
+        const prompt = String(payload.prompt ?? payload.user_prompt ?? "");
+        if (prompt) {
+          const episodeId =
+            (payload.episode_id as string | undefined) ?? process.env.ME0_EPISODE_ID ?? undefined;
+          const result = await engine.push(ctx, { prompt, episode_id: episodeId });
+          if (result.pushed.length > 0) {
+            const lines = result.pushed.map((p) => `- [${p.kind}] ${p.text}`).join("\n");
+            console.log(
+              JSON.stringify({
+                hookSpecificOutput: {
+                  hookEventName: "UserPromptSubmit",
+                  additionalContext: `<me0-push>\n${lines}\n</me0-push>`,
+                },
+              }),
+            );
+          }
+        }
       } else if (event === "session-end") {
-        const payload = args[1] && !args[1].startsWith("--") ? JSON.parse(args[1]) : {};
+        const payload = await hookPayload(args);
         if (payload.episode_id) {
           await engine.episodeEnd(ctx, {
-            episode_id: payload.episode_id,
-            summary: payload.summary,
-            success: payload.success,
+            episode_id: payload.episode_id as string,
+            summary: payload.summary as string | undefined,
+            success: payload.success as boolean | undefined,
           });
         }
       } else {
@@ -345,6 +445,12 @@ async function main() {
       return cmdExport(args);
     case "import":
       return cmdImport(args);
+    case "import-pi":
+      return cmdImportPi(args);
+    case "import-context":
+      return cmdImportContext(args);
+    case "import-claude":
+      return cmdImportClaude(args);
     case "import-openclaw":
       return cmdImportOpenClaw(args);
     case "dream":

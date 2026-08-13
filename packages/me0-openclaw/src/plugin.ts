@@ -58,6 +58,7 @@ function errorResult(err: unknown): OpenClawToolResult {
 export class Me0OpenClawRuntime {
   private store: Store | null = null;
   private engine: Me0Engine | null = null;
+  private connecting: Promise<Me0Engine> | null = null;
   private episodes = new Map<string, string>();
   private cursors = new Map<string, string>();
 
@@ -65,10 +66,23 @@ export class Me0OpenClawRuntime {
 
   private async getEngine(): Promise<Me0Engine> {
     if (this.engine) return this.engine;
-    this.store = await connect(this.cfg.mongodb_uri);
-    await ensureCollections(this.store.db);
-    this.engine = new Me0Engine(this.store.db);
-    return this.engine;
+    if (!this.connecting) {
+      this.connecting = (async () => {
+        let store: Store | null = null;
+        try {
+          store = await connect(this.cfg.mongodb_uri);
+          await ensureCollections(store.db);
+          this.store = store;
+          this.engine = new Me0Engine(store.db);
+          return this.engine;
+        } catch (err) {
+          await store?.close().catch(() => {});
+          this.connecting = null;
+          throw err;
+        }
+      })();
+    }
+    return this.connecting;
   }
 
   ctx(sessionKey?: string): OperationContext {
@@ -140,9 +154,13 @@ export class Me0OpenClawRuntime {
   }
 
   async delta(sessionKey: string): Promise<{ cursor: string; changes: unknown[] }> {
-    const result = (await this.op("delta", {
-      ...(this.cursors.has(sessionKey) ? { cursor: this.cursors.get(sessionKey) } : {}),
-    })) as { cursor: string; changes: unknown[] };
+    const result = (await this.op(
+      "delta",
+      {
+        ...(this.cursors.has(sessionKey) ? { cursor: this.cursors.get(sessionKey) } : {}),
+      },
+      sessionKey,
+    )) as { cursor: string; changes: unknown[] };
     this.cursors.set(sessionKey, result.cursor);
     return result;
   }
@@ -151,6 +169,7 @@ export class Me0OpenClawRuntime {
     await this.store?.close();
     this.store = null;
     this.engine = null;
+    this.connecting = null;
   }
 }
 
@@ -214,7 +233,9 @@ export function createMe0Plugin(): OpenClawPluginEntry & {
           try {
             const hit = await rt.getMemory(String(params.memory_id));
             return text(
-              hit ?? { protocol_version: 1, found: false, message: "no recorded memory" },
+              hit
+                ? { protocol_version: 1, found: true, ...hit }
+                : { protocol_version: 1, found: false, message: "no recorded memory" },
             );
           } catch (err) {
             return errorResult(err);

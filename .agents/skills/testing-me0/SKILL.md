@@ -21,5 +21,10 @@ description: How to run and end-to-end test the me0 memory layer (CLI, MCP serve
 - Launch: `ME0_MONGODB_URI=... ME0_USER_ID=... bun packages/me0-mcp/src/server.ts`.
 - Pipe newline-delimited JSON-RPC: initialize → notifications/initialized → tools/list → tools/call. Note: the server does NOT exit when stdin closes — run it backgrounded/kill it, don't wait for the pipeline to finish.
 
+## OpenClaw adapter (PR #7+)
+- `me0 init` wires OpenClaw when `$OPENCLAW_HOME` (or `~/.openclaw`) exists: point `OPENCLAW_HOME` at a temp dir to test; it writes `plugins.entries.me0` into `<dir>/openclaw.json`; `me0 doctor` then prints "openclaw: wired".
+- Backfill: `me0 import-openclaw --dir packages/me0-cli/test/fixtures/openclaw-workspace` — deterministic and idempotent (rerun should report 0 added). Fixture yields 6 memories + 2 episodes; code fences and <8-char items are excluded.
+- Plugin smoke test without a real OpenClaw host: import `packages/me0-openclaw/src/plugin.ts` in a bun script with a mock api implementing `registerTool`/`registerHook`/`on` (see `src/api.ts` for the structural interface); call `plugin.register(api)`, then invoke tools/hooks directly. Fail-open check: use `mongodb://127.0.0.1:27017/?serverSelectionTimeoutMS=1500` with mongo stopped so hooks fail fast instead of hanging ~30s.
+
 ## Hooks
 - `me0 hook session-start` prints Claude Code `hookSpecificOutput` JSON; with Mongo down it must still exit 0 (fail-open, error on stderr). Restart mongo (`docker start me0-mongo`) afterwards.
