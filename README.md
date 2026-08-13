@@ -52,6 +52,22 @@ me0 op handoff '{"episode_id":"ep_...","banked_state":"Fixing auth bug in api/lo
 me0 op context_pack '{"resume":"hd_..."}'
 ```
 
+### Backfill importers (migration path)
+
+Bring your existing agent context with you — deterministically, no LLM:
+
+```bash
+# CLAUDE.md / AGENTS.md / MEMORY.md / USER.md / SOUL.md → typed memories
+# (walks up from cwd + checks ~, ~/.claude, ~/.codex; or pass explicit paths)
+me0 import-context [paths...]
+
+# Claude Code auto-memory (projects/*/MEMORY.md etc.) + session transcripts
+# (projects/*/*.jsonl) → memories + episodes/events
+me0 import-claude [--dir ~/.claude]
+```
+
+Markdown headings become concept-entity topic hints; bullets/paragraphs become individual memories with kind heuristics (`prefer/always/never` → preference, `decided/decision` → decision, imperative how-tos → procedure, else fact). Every import is provenance-stamped (`method: "deterministic"`, confidence 0.6, source file recorded) and idempotent — re-imports dedupe on normalized text and transcripts key on session id (NOOP on duplicate).
+
 ## Design principles (short form)
 
 User-centric, not brain-centric · verbs-first, additive-forever · deterministic before LLM · provenance + bi-temporality on every memory · honest abstention ("no recorded memory", never a guess) · token cost is a first-class metric · fail-open hooks · consent-scoped sharing (remote callers are world-visibility only; `remember`/`forget`/`handoff` are local-only) · one tree, many harnesses.
