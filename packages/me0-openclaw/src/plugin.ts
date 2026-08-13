@@ -42,6 +42,24 @@ function text(result: unknown): OpenClawToolResult {
   };
 }
 
+/** Agent-callable verbs, mirroring `contracts.tools` in openclaw.plugin.json. */
+export const DECLARED_TOOLS = new Set([
+  "recall",
+  "remember",
+  "entity",
+  "context_pack",
+  "delta",
+  "forget",
+  "synthesize",
+  "episode_start",
+  "episode_log",
+  "episode_end",
+  "episode_recall",
+  "handoff",
+  "whoami",
+  "me0_stats",
+]);
+
 function errorResult(err: unknown): OpenClawToolResult {
   return {
     content: [
@@ -59,12 +77,14 @@ export class Me0OpenClawRuntime {
   private store: Store | null = null;
   private engine: Me0Engine | null = null;
   private connecting: Promise<Me0Engine> | null = null;
+  private closed = false;
   private episodes = new Map<string, string>();
   private cursors = new Map<string, string>();
 
   constructor(private cfg: Me0OpenClawConfig) {}
 
   private async getEngine(): Promise<Me0Engine> {
+    if (this.closed) throw new Error("me0 runtime closed");
     if (this.engine) return this.engine;
     if (!this.connecting) {
       this.connecting = (async () => {
@@ -72,6 +92,7 @@ export class Me0OpenClawRuntime {
         try {
           store = await connect(this.cfg.mongodb_uri);
           await ensureCollections(store.db);
+          if (this.closed) throw new Error("me0 runtime closed");
           this.store = store;
           this.engine = new Me0Engine(store.db);
           return this.engine;
@@ -166,6 +187,8 @@ export class Me0OpenClawRuntime {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
+    await this.connecting?.catch(() => {});
     await this.store?.close();
     this.store = null;
     this.engine = null;
@@ -244,7 +267,10 @@ export function createMe0Plugin(): OpenClawPluginEntry & {
       });
 
       // ---- the me0 verbs, delegated to me0-core's operation registry ----
+      // Only agent-callable verbs declared in the manifest's contracts.tools;
+      // ambient push and the admin-scoped dream verb stay host-internal.
       for (const op of operations) {
+        if (!DECLARED_TOOLS.has(op.name)) continue;
         api.registerTool({
           name: op.name,
           description: op.description,

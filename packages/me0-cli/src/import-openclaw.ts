@@ -125,6 +125,16 @@ export async function importOpenClawWorkspace(
         agent_name: ctx.agent,
         title: `OpenClaw daily log ${date}`,
       })) as { episode_id: string };
+      // Tag immediately so an interrupted run is still recognized as imported.
+      await episodes.updateOne(
+        { user_id: ctx.user_id, episode_id: started.episode_id },
+        {
+          $set: {
+            started_at: `${date}T00:00:00.000Z`,
+            tags: ["openclaw-import", tag],
+          },
+        },
+      );
       for (const item of items) {
         await engine.episodeLog(ctx, {
           episode_id: started.episode_id,
@@ -136,15 +146,6 @@ export async function importOpenClawWorkspace(
         episode_id: started.episode_id,
         summary: items.slice(0, 5).join(" · ").slice(0, 1000) || `daily log ${date}`,
       });
-      await episodes.updateOne(
-        { user_id: ctx.user_id, episode_id: started.episode_id },
-        {
-          $set: {
-            started_at: `${date}T00:00:00.000Z`,
-            tags: ["openclaw-import", tag],
-          },
-        },
-      );
       summary.episodes_added++;
     }
   }

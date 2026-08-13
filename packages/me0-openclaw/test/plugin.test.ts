@@ -8,7 +8,7 @@ import type {
   OpenClawPluginApi,
   OpenClawTool,
 } from "../src/api.js";
-import { createMe0Plugin } from "../src/plugin.js";
+import { DECLARED_TOOLS, createMe0Plugin } from "../src/plugin.js";
 
 class MockApi implements OpenClawPluginApi {
   tools = new Map<string, OpenClawTool>();
@@ -64,10 +64,12 @@ afterAll(async () => {
 });
 
 describe("tool registration", () => {
-  test("registers memory_search, memory_get, and every me0 verb", () => {
+  test("registers memory_search, memory_get, and every declared me0 verb", () => {
     expect(api.tools.has("memory_search")).toBe(true);
     expect(api.tools.has("memory_get")).toBe(true);
-    for (const op of operations) expect(api.tools.has(op.name)).toBe(true);
+    for (const op of operations) {
+      expect(api.tools.has(op.name)).toBe(DECLARED_TOOLS.has(op.name));
+    }
   });
 });
 
