@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "me0": {
+      "type": "stdio",
+      "command": "me0-mcp",
+      "env": {
+        "ME0_DATA": "${PLUGIN_DATA}"
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.json",
+  "name": "me0",
+  "version": "0.1.0",
+  "description": "The zeroth layer under every agent: one portable, MongoDB-backed personal context graph and agent session memory.",
+  "author": "GRATITUD3",
+  "license": "MIT",
+  "homepage": "https://github.com/gratitude5dee/me0"
+}

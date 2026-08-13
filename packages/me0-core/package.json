@@ -1,0 +1,14 @@
+{
+  "name": "me0-core",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "main": "src/index.ts",
+  "dependencies": {
+    "mongodb": "^6.12.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.1.0",
+    "mongodb-memory-server": "^10.1.3"
+  }
+}
