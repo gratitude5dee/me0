@@ -82,4 +82,26 @@ describe("import-pi", () => {
     expect(await store.db.collection("events").countDocuments({})).toBe(before);
     expect(await store.db.collection("episodes").countDocuments({ user_id: ctx.user_id })).toBe(2);
   });
+
+  test("importing for a second user does not duplicate the shared event stream", async () => {
+    const before = await store.db.collection("events").countDocuments({});
+    const stats = await importPiSessions(store.db, { ...ctx, user_id: "second-user" }, FIXTURES);
+    expect(stats.imported).toBe(2);
+    expect(await store.db.collection("events").countDocuments({})).toBe(before);
+    expect(await store.db.collection("episodes").countDocuments({ user_id: "second-user" })).toBe(
+      2,
+    );
+  });
+
+  test("a session missing its events (interrupted run) is repaired on re-import", async () => {
+    const episodeId = "ep_pi_abc12345-1111-2222-3333-444455556666";
+    await store.db
+      .collection("episodes")
+      .deleteOne({ user_id: ctx.user_id, episode_id: episodeId });
+    await store.db.collection("events").deleteMany({ episode_id: episodeId });
+    const stats = await importPiSessions(store.db, ctx, FIXTURES);
+    expect(stats.imported).toBe(1);
+    expect(stats.skipped).toBe(1);
+    expect(await store.db.collection("events").countDocuments({ episode_id: episodeId })).toBe(5);
+  });
 });

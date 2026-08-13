@@ -194,7 +194,10 @@ export async function importPiSessions(
       continue;
     }
 
-    const { events, endedAt, title, model } = eventsForFile(h, entries.slice(1));
+    const { events, endedAt, title, model } = eventsForFile(
+      h,
+      entries.filter((e) => e !== header),
+    );
     const startedAt = h.timestamp ?? endedAt ?? new Date(0).toISOString();
     const promptCount = events.filter((e) => e.type === "prompt").length;
     const toolCallCount = events.filter((e) => e.type === "tool_call").length;
@@ -214,12 +217,17 @@ export async function importPiSessions(
       handoff: null,
       tags: ["pi-import"],
     };
-    await db.collection<EpisodeDoc>("episodes").insertOne(episode);
+    // Events first, episode last: the episode doc is the idempotency key, so
+    // its presence must imply the events landed. The deleteMany makes retries
+    // (and imports of the same session under another user) converge instead
+    // of duplicating the shared per-episode event stream.
+    await db.collection<EventDoc>("events").deleteMany({ episode_id: episodeId });
     if (events.length > 0) {
       await db
         .collection<EventDoc>("events")
         .insertMany(events.map((e) => ({ ...e, episode_id: episodeId })));
     }
+    await db.collection<EpisodeDoc>("episodes").insertOne(episode);
     stats.imported++;
     stats.events += events.length;
   }
