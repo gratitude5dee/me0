@@ -59,6 +59,19 @@ me0 op handoff '{"episode_id":"ep_...","banked_state":"Fixing auth bug in api/lo
 me0 op context_pack '{"resume":"hd_..."}'
 ```
 
+## OpenClaw adapter (v0.2)
+
+A native OpenClaw plugin (`openclaw.plugin.json` + `packages/me0-openclaw`) swaps OpenClaw's file-based `memory_search`/`memory_get` for the me0 graph, exposes every me0 verb as a tool, captures sessions as episodes (fail-open `command:new`/`command:stop`/`session:compact:before` hooks bank a handoff before compaction), injects the context pack at `agent:bootstrap`, and contributes `delta` on gateway heartbeat. Configure `mongodb_uri` (plus `user_id`, optional `agent`) in the plugin config — `me0 init` detects `~/.openclaw` (or `OPENCLAW_HOME`) and writes it for you.
+
+Backfill an existing OpenClaw workspace deterministically (no LLM, idempotent):
+
+```bash
+me0 import-openclaw               # defaults to ~/.openclaw/workspace
+me0 import-openclaw --dir /path/to/workspace
+```
+
+Imports `MEMORY.md` (facts), `USER.md` (preferences), `SOUL.md` (beliefs) as standing memories and `memory/YYYY-MM-DD*.md` daily logs as ended episodes, all with `harness: "openclaw"` provenance.
+
 ### pi adapter (v0.2)
 
 pi has no built-in MCP, so me0 ships a native pi extension (`extensions/pi/me0.ts`) that registers `memory_*` tools (recall, remember, entity, context_pack, delta, episode_recall, handoff, whoami, me0_stats) by delegating to the me0-core operation registry with `harness: "pi"`. It injects the context pack at session start, logs tool calls into the active episode, and closes the episode on shutdown — all fire-and-forget and fail-open. `me0 init` detects `~/.pi/agent/` and installs the extension into `~/.pi/agent/extensions/`.
