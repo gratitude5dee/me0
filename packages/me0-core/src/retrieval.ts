@@ -196,7 +196,7 @@ export async function hybridRecall(
   try {
     const preds = await db
       .collection("predictions")
-      .find({ subject_type: "memory", task: "retrieval_utility" })
+      .find({ user_id: ctx.user_id, subject_type: "memory", task: "retrieval_utility" })
       .limit(500)
       .toArray();
     for (const p of preds) utility.set(p.subject_id as string, (p.score as number) ?? 0);

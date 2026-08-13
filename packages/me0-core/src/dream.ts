@@ -34,7 +34,10 @@ export async function dream(db: Db, ctx: OperationContext): Promise<DreamReport>
 
   // 1. purge expired soft-deletes
   const purgeCutoff = new Date(Date.now() - 72 * 3600 * 1000).toISOString();
-  const purge = await memories.deleteMany({ deleted_at: { $ne: null, $lt: purgeCutoff } });
+  const purge = await memories.deleteMany({
+    user_id: ctx.user_id,
+    deleted_at: { $ne: null, $lt: purgeCutoff },
+  });
 
   // 2. dedupe by normalized text
   const live = await memories

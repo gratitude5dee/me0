@@ -26,5 +26,10 @@ description: How to run and end-to-end test the me0 memory layer (CLI, MCP serve
 - Backfill: `me0 import-openclaw --dir packages/me0-cli/test/fixtures/openclaw-workspace` — deterministic and idempotent (rerun should report 0 added). Fixture yields 6 memories + 2 episodes; code fences and <8-char items are excluded.
 - Plugin smoke test without a real OpenClaw host: import `packages/me0-openclaw/src/plugin.ts` in a bun script with a mock api implementing `registerTool`/`registerHook`/`on` (see `src/api.ts` for the structural interface); call `plugin.register(api)`, then invoke tools/hooks directly. Fail-open check: use `mongodb://127.0.0.1:27017/?serverSelectionTimeoutMS=1500` with mongo stopped so hooks fail fast instead of hanging ~30s.
 
+## pi adapter
+- Backfill: `me0 import-pi --dir <sessions-dir> --uri mongodb://127.0.0.1:27017 --user <id>` — deterministic + idempotent (key `ep_pi_<session id>`); rerun should report all files as "already present". Fixtures: `packages/me0-cli/test/fixtures/pi-sessions` (2 sessions → 2 episodes, 6 events).
+- Verify imports with `me0 op episode_recall '{"query":"pi"}'` (note: episode_recall requires a `query` arg).
+- Extension wiring: `mkdir -p ~/.pi/agent` then `me0 init` writes a wrapper to `~/.pi/agent/extensions/me0.ts` re-exporting `extensions/pi/me0.ts`; second init prints "pi already wired". Extension unit tests live in `extensions/pi/me0.test.ts` and run under `bun test`.
+
 ## Hooks
 - `me0 hook session-start` prints Claude Code `hookSpecificOutput` JSON; with Mongo down it must still exit 0 (fail-open, error on stderr). Restart mongo (`docker start me0-mongo`) afterwards.

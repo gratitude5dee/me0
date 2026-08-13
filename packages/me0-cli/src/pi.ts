@@ -194,7 +194,10 @@ export async function importPiSessions(
       continue;
     }
 
-    const { events, endedAt, title, model } = eventsForFile(h, entries.slice(1));
+    const { events, endedAt, title, model } = eventsForFile(
+      h,
+      entries.filter((e) => e !== header),
+    );
     const startedAt = h.timestamp ?? endedAt ?? new Date(0).toISOString();
     const promptCount = events.filter((e) => e.type === "prompt").length;
     const toolCallCount = events.filter((e) => e.type === "tool_call").length;
@@ -214,14 +217,25 @@ export async function importPiSessions(
       handoff: null,
       tags: ["pi-import"],
     };
-    await db.collection<EpisodeDoc>("episodes").insertOne(episode);
-    if (events.length > 0) {
-      await db
-        .collection<EventDoc>("events")
-        .insertMany(events.map((e) => ({ ...e, episode_id: episodeId })));
+    // Events first, episode last: an episode doc's presence implies its event
+    // stream landed. Events carry no user_id, so the stream is shared across
+    // users; only rewrite it when no episode (for any user) references it yet
+    // — that repairs interrupted runs without destroying a stream another
+    // user already imported.
+    const streamOwned = await db
+      .collection<EpisodeDoc>("episodes")
+      .findOne({ episode_id: episodeId }, { projection: { _id: 1 } });
+    if (!streamOwned) {
+      await db.collection<EventDoc>("events").deleteMany({ episode_id: episodeId });
+      if (events.length > 0) {
+        await db
+          .collection<EventDoc>("events")
+          .insertMany(events.map((e) => ({ ...e, episode_id: episodeId })));
+      }
+      stats.events += events.length;
     }
+    await db.collection<EpisodeDoc>("episodes").insertOne(episode);
     stats.imported++;
-    stats.events += events.length;
   }
   return stats;
 }
