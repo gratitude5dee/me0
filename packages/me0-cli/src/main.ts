@@ -336,6 +336,10 @@ async function hookPayload(args: string[]): Promise<Record<string, unknown>> {
   return {};
 }
 
+function strField(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
 async function cmdHook(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
@@ -363,10 +367,9 @@ async function cmdHook(args: string[]) {
         );
       } else if (event === "prompt") {
         const payload = await hookPayload(args);
-        const prompt = String(payload.prompt ?? payload.user_prompt ?? "");
+        const prompt = strField(payload.prompt) ?? strField(payload.user_prompt) ?? "";
         if (prompt) {
-          const episodeId =
-            (payload.episode_id as string | undefined) ?? process.env.ME0_EPISODE_ID ?? undefined;
+          const episodeId = strField(payload.episode_id) ?? process.env.ME0_EPISODE_ID ?? undefined;
           const result = await engine.push(ctx, { prompt, episode_id: episodeId });
           if (result.pushed.length > 0) {
             const lines = result.pushed.map((p) => `- [${p.kind}] ${p.text}`).join("\n");
@@ -382,11 +385,12 @@ async function cmdHook(args: string[]) {
         }
       } else if (event === "session-end") {
         const payload = await hookPayload(args);
-        if (payload.episode_id) {
+        const endEpisodeId = strField(payload.episode_id);
+        if (endEpisodeId) {
           await engine.episodeEnd(ctx, {
-            episode_id: payload.episode_id as string,
-            summary: payload.summary as string | undefined,
-            success: payload.success as boolean | undefined,
+            episode_id: endEpisodeId,
+            summary: strField(payload.summary),
+            success: typeof payload.success === "boolean" ? payload.success : undefined,
           });
         }
       } else {
