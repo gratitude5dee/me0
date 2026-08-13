@@ -12,6 +12,8 @@ import {
   operations,
 } from "me0-core";
 import { configDir, loadConfig, saveConfig } from "./config.js";
+import { detectHermes, hermesHome, printHermesGuidance, wireHermesConfig } from "./hermes.js";
+import { importHermes } from "./import-hermes.js";
 
 const HELP = `me0 — the zeroth memory layer
 
@@ -23,6 +25,8 @@ commands:
   verify    end-to-end write → recall → pack round-trip (exit 0 = healthy)
   export    dump all memory as JSONL to stdout or --out <dir>
   import    load a me0 export (JSONL) from --in <file>
+  import-hermes  backfill from Hermes: state.db sessions + memories/*.md
+                 flags: --db <state.db path>, --home <hermes home>
   dream     consolidation pass: purge expired soft-deletes, decay tiers
   op        invoke any verb directly: me0 op <name> '<json-args>'
   hook      harness hook entrypoint: me0 hook <session-start|session-end> [json]
@@ -110,6 +114,18 @@ async function cmdInit(args: string[]) {
     }
   } else {
     console.log("codex not detected (~/.codex missing) — skipped");
+  }
+
+  // Hermes wiring
+  if (detectHermes()) {
+    if (wireHermesConfig(uri, userId)) {
+      console.log(`hermes wired: ${hermesHome()}/config.yaml ([mcp_servers.me0])`);
+    } else {
+      console.log("hermes already wired");
+    }
+    printHermesGuidance();
+  } else {
+    console.log("hermes not detected (~/.hermes missing) — skipped");
   }
 
   console.log(
@@ -218,6 +234,24 @@ async function cmdImport(args: string[]) {
   });
 }
 
+async function cmdImportHermes(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const dbPath = flag(args, "--db");
+  const home = flag(args, "--home");
+  await withEngine(uri, async (engine, db) => {
+    const counts = await importHermes(db, engine, userId, {
+      dbPath,
+      hermesHome: home,
+    });
+    console.log(
+      `import-hermes: ${counts.episodes} episodes, ${counts.events} events, ` +
+        `${counts.memories} memories added (${counts.skipped_memories} already present)`,
+    );
+  });
+}
+
 async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
@@ -313,6 +347,8 @@ async function main() {
       return cmdExport(args);
     case "import":
       return cmdImport(args);
+    case "import-hermes":
+      return cmdImportHermes(args);
     case "dream":
       return cmdDream(args);
     case "op":

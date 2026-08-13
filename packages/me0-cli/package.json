@@ -5,9 +5,11 @@
   "license": "MIT",
   "bin": { "me0": "src/main.ts" },
   "dependencies": {
-    "me0-core": "workspace:*"
+    "me0-core": "workspace:*",
+    "mongodb": "^6.12.0"
   },
   "devDependencies": {
-    "bun-types": "^1.1.0"
+    "bun-types": "^1.1.0",
+    "mongodb-memory-server": "^10.1.3"
   }
 }

@@ -52,6 +52,14 @@ me0 op handoff '{"episode_id":"ep_...","banked_state":"Fixing auth bug in api/lo
 me0 op context_pack '{"resume":"hd_..."}'
 ```
 
+## Hermes adapter (v0.2)
+
+Replace Hermes's 2,200-char `MEMORY.md` cap with your context graph:
+
+- **Memory provider** — copy [`plugins/memory/me0/`](plugins/memory/me0/) into your [hermes-agent](https://github.com/NousResearch/hermes-agent) checkout's `plugins/memory/` and run `hermes config set memory.provider me0`. It serves a frozen-snapshot context pack (stable prefix — respects Hermes's prompt caching) and captures episodes (`episode_start/log/end`) fail-open. See [`plugins/memory/me0/README.md`](plugins/memory/me0/README.md).
+- **MCP verbs** — `me0 init` detects `~/.hermes/` and adds an `mcp_servers.me0` entry to `~/.hermes/config.yaml` so Hermes can call the verbs directly.
+- **Backfill** — `me0 import-hermes [--db ~/.hermes/state.db] [--home ~/.hermes]` imports Hermes sessions/messages from `state.db` as episodes/events and `memories/MEMORY.md` / `USER.md` / `SOUL.md` as typed memories. Deterministic (no LLM), idempotent — safe to re-run.
+
 ## Design principles (short form)
 
 User-centric, not brain-centric · verbs-first, additive-forever · deterministic before LLM · provenance + bi-temporality on every memory · honest abstention ("no recorded memory", never a guess) · token cost is a first-class metric · fail-open hooks · consent-scoped sharing (remote callers are world-visibility only; `remember`/`forget`/`handoff` are local-only) · one tree, many harnesses.
