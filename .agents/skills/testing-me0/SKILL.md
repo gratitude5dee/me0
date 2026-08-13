@@ -1,0 +1,25 @@
+---
+name: testing-me0
+description: How to run and end-to-end test the me0 memory layer (CLI, MCP server, hooks) against a local MongoDB.
+---
+
+# Testing me0
+
+## Setup
+- Bun monorepo: `bun install` at repo root; `bun link` inside `packages/me0-cli` and `packages/me0-mcp` to get `me0` / `me0-mcp` on PATH.
+- MongoDB: `docker run -d --name me0-mongo -p 127.0.0.1:27017:27017 mongo:8`.
+- Static checks: `bun run typecheck`, `bun run lint` (biome), `bun test`.
+
+## CLI golden path
+- `me0 init --uri mongodb://127.0.0.1:27017 --user <id> --name "<Name>"` writes `~/.me0/config.json` and seeds identity.
+- `me0 verify` (exit 0 = write→recall→pack round-trip ok), `me0 doctor` (exit 0 = mongo reachable).
+- Any verb: `me0 op <name> '<json>'` — ops: recall, remember, entity, context_pack, delta, forget, synthesize, episode_start/log/end/recall, handoff, whoami, me0_stats.
+- Handoff flow: `episode_start` → `handoff {"episode_id","banked_state"}` returns `token` → `context_pack {"resume":"<token>"}` includes the banked state.
+- Export/import: `me0 export --out <dir>` writes one JSONL per collection; `me0 import --in <file.jsonl>` (lines carry `_collection`).
+
+## MCP server (stdio JSON-RPC)
+- Launch: `ME0_MONGODB_URI=... ME0_USER_ID=... bun packages/me0-mcp/src/server.ts`.
+- Pipe newline-delimited JSON-RPC: initialize → notifications/initialized → tools/list → tools/call. Note: the server does NOT exit when stdin closes — run it backgrounded/kill it, don't wait for the pipeline to finish.
+
+## Hooks
+- `me0 hook session-start` prints Claude Code `hookSpecificOutput` JSON; with Mongo down it must still exit 0 (fail-open, error on stderr). Restart mongo (`docker start me0-mongo`) afterwards.
