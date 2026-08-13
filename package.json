@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "typecheck": "tsc --build packages/me0-core packages/me0-mcp packages/me0-cli",
+    "typecheck": "tsc --build packages/me0-core packages/me0-mcp packages/me0-cli packages/me0-openclaw",
     "test": "bun test",
     "lint": "bunx @biomejs/biome check ."
   },

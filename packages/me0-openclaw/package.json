@@ -1,9 +1,9 @@
 {
-  "name": "me0-cli",
+  "name": "me0-openclaw",
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "bin": { "me0": "src/main.ts" },
+  "main": "src/index.ts",
   "dependencies": {
     "me0-core": "workspace:*"
   },

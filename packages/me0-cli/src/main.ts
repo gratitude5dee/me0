@@ -12,17 +12,20 @@ import {
   operations,
 } from "me0-core";
 import { configDir, loadConfig, saveConfig } from "./config.js";
+import { DEFAULT_OPENCLAW_WORKSPACE, importOpenClawWorkspace } from "./import-openclaw.js";
+import { openclawDir, wireOpenClaw } from "./openclaw.js";
 
 const HELP = `me0 — the zeroth memory layer
 
 usage: me0 <command> [flags]
 
 commands:
-  init      provision storage, wire harnesses (Claude Code, Codex), seed identity
+  init      provision storage, wire harnesses (Claude Code, Codex, OpenClaw), seed identity
   doctor    diagnose config, storage, and harness wiring
   verify    end-to-end write → recall → pack round-trip (exit 0 = healthy)
   export    dump all memory as JSONL to stdout or --out <dir>
   import    load a me0 export (JSONL) from --in <file>
+  import-openclaw  backfill an OpenClaw workspace (MEMORY.md, memory/*.md, USER.md, SOUL.md) [--dir <workspace>]
   dream     consolidation pass: purge expired soft-deletes, decay tiers
   op        invoke any verb directly: me0 op <name> '<json-args>'
   hook      harness hook entrypoint: me0 hook <session-start|session-end> [json]
@@ -112,6 +115,9 @@ async function cmdInit(args: string[]) {
     console.log("codex not detected (~/.codex missing) — skipped");
   }
 
+  // OpenClaw wiring
+  wireOpenClaw(uri, userId);
+
   console.log(
     "claude code: install the me0 plugin (this repo) via the plugin marketplace, or add mcp.json + hooks/hooks.json to your project.",
   );
@@ -138,6 +144,12 @@ async function cmdDoctor(args: string[]) {
     existsSync(codexToml) && readFileSync(codexToml, "utf-8").includes("[mcp_servers.me0]")
       ? "codex: wired"
       : "codex: not wired",
+  );
+  const openclawConfig = join(openclawDir(), "openclaw.json");
+  console.log(
+    existsSync(openclawConfig) && readFileSync(openclawConfig, "utf-8").includes('"me0"')
+      ? "openclaw: wired"
+      : "openclaw: not wired",
   );
   process.exit(ok ? 0 : 1);
 }
@@ -215,6 +227,26 @@ async function cmdImport(args: string[]) {
       n++;
     }
     console.log(`imported ${n} docs`);
+  });
+}
+
+async function cmdImportOpenClaw(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const dir = flag(args, "--dir") ?? DEFAULT_OPENCLAW_WORKSPACE;
+  if (!existsSync(dir)) {
+    console.error(`import-openclaw: workspace not found: ${dir} (pass --dir <workspace>)`);
+    process.exit(1);
+  }
+  await withEngine(uri, async (engine, db) => {
+    const ctx = ctxFor(userId);
+    ctx.harness = "openclaw";
+    ctx.agent = "openclaw-import";
+    const s = await importOpenClawWorkspace(engine, db, ctx, dir);
+    console.log(
+      `import-openclaw: ${s.memories_added} memories added (${s.memories_skipped} deduped), ${s.episodes_added} episodes added (${s.episodes_skipped} already imported) from ${dir}`,
+    );
   });
 }
 
@@ -313,6 +345,8 @@ async function main() {
       return cmdExport(args);
     case "import":
       return cmdImport(args);
+    case "import-openclaw":
+      return cmdImportOpenClaw(args);
     case "dream":
       return cmdDream(args);
     case "op":
