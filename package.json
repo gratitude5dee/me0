@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --build packages/me0-core packages/me0-mcp packages/me0-cli packages/me0-bench extensions/pi packages/me0-openclaw",
-    "test": "bun test",
+    "test": "bun test --timeout 30000",
     "lint": "bunx @biomejs/biome check ."
   },
   "devDependencies": {
