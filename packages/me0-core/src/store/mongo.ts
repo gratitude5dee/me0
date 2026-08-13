@@ -29,6 +29,7 @@ export async function ensureCollections(db: Db): Promise<void> {
 }
 
 async function ensureIndexes(db: Db): Promise<void> {
+  await migrateSessionStateIndex(db);
   await db.collection("users").createIndex({ user_id: 1 }, { unique: true });
   await db.collection("entities").createIndex({ user_id: 1, slug: 1 }, { unique: true });
   await db.collection("entities").createIndex({ user_id: 1, entity_id: 1 }, { unique: true });
@@ -44,4 +45,32 @@ async function ensureIndexes(db: Db): Promise<void> {
   await db.collection("retrievals").createIndex({ user_id: 1, ts: -1 });
   await db.collection("session_state").createIndex({ user_id: 1, episode_id: 1 }, { unique: true });
   await db.collection("audit").createIndex({ ts: -1 });
+}
+
+/**
+ * session_state was originally keyed by episode_id alone. Drop the legacy
+ * unique index and backfill user_id from the owning episode so the
+ * { user_id, episode_id } compound key can take over.
+ */
+async function migrateSessionStateIndex(db: Db): Promise<void> {
+  const col = db.collection("session_state");
+  try {
+    const indexes = await col.indexes();
+    if (indexes.some((i) => i.name === "episode_id_1")) {
+      await col.dropIndex("episode_id_1");
+    }
+  } catch {
+    // collection or index may not exist yet
+  }
+  try {
+    const orphans = await col.find({ user_id: { $exists: false } }).toArray();
+    for (const doc of orphans) {
+      const ep = await db.collection("episodes").findOne({ episode_id: doc.episode_id });
+      if (ep) {
+        await col.updateOne({ _id: doc._id }, { $set: { user_id: ep.user_id } });
+      }
+    }
+  } catch {
+    // backfill is best-effort
+  }
 }
