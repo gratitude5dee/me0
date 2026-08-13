@@ -7,7 +7,10 @@ import {
   type OperationContext,
   type Store,
   connect,
+  discoverContextFiles,
   ensureCollections,
+  importClaudeDir,
+  importContextFiles,
   invoke,
   operations,
 } from "me0-core";
@@ -23,6 +26,8 @@ commands:
   verify    end-to-end write → recall → pack round-trip (exit 0 = healthy)
   export    dump all memory as JSONL to stdout or --out <dir>
   import    load a me0 export (JSONL) from --in <file>
+  import-context  backfill CLAUDE.md/AGENTS.md/MEMORY.md/USER.md/SOUL.md into memories
+  import-claude   backfill ~/.claude auto-memory + session transcripts (--dir to override)
   dream     consolidation pass: purge expired soft-deletes, decay tiers
   op        invoke any verb directly: me0 op <name> '<json-args>'
   hook      harness hook entrypoint: me0 hook <session-start|session-end> [json]
@@ -218,6 +223,50 @@ async function cmdImport(args: string[]) {
   });
 }
 
+async function cmdImportContext(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const flagValues = new Set([flag(args, "--uri"), flag(args, "--user")].filter(Boolean));
+  const paths = args.filter((a) => !a.startsWith("--") && !flagValues.has(a));
+  const files = paths.length > 0 ? paths : discoverContextFiles(process.cwd());
+  if (files.length === 0) {
+    console.log("no context files found (CLAUDE.md, AGENTS.md, MEMORY.md, USER.md, SOUL.md)");
+    return;
+  }
+  await withEngine(uri, async (engine, db) => {
+    const results = await importContextFiles(engine, db, ctxFor(userId), files);
+    for (const r of results) {
+      const kinds = Object.entries(r.kinds)
+        .map(([k, n]) => `${n} ${k}`)
+        .join(", ");
+      console.log(
+        `${r.file}: +${r.added} memories${kinds ? ` (${kinds})` : ""}, ${r.skipped} duplicates skipped`,
+      );
+    }
+  });
+}
+
+async function cmdImportClaude(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const dir = flag(args, "--dir") ?? join(homedir(), ".claude");
+  if (!existsSync(dir)) {
+    console.log(`claude dir not found: ${dir} — nothing to import`);
+    return;
+  }
+  await withEngine(uri, async (engine, db) => {
+    const r = await importClaudeDir(engine, db, ctxFor(userId), dir);
+    const added = r.transcripts.filter((t) => t.action === "ADD");
+    console.log(
+      `memories: +${r.memories_added} (${r.memories_skipped} duplicates skipped); episodes: +${added.length} (${
+        r.transcripts.length - added.length
+      } already imported), ${added.reduce((n, t) => n + t.events, 0)} events`,
+    );
+  });
+}
+
 async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
@@ -313,6 +362,10 @@ async function main() {
       return cmdExport(args);
     case "import":
       return cmdImport(args);
+    case "import-context":
+      return cmdImportContext(args);
+    case "import-claude":
+      return cmdImportClaude(args);
     case "dream":
       return cmdDream(args);
     case "op":

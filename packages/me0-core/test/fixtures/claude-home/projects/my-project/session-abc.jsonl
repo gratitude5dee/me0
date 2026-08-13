@@ -1,0 +1,6 @@
+{"type":"summary","summary":"Fixed the auth bug","leafUuid":"leaf-1"}
+{"type":"user","sessionId":"session-abc","timestamp":"2026-01-01T10:00:00.000Z","cwd":"/home/user/my-project","gitBranch":"main","message":{"role":"user","content":"Please fix the auth bug"}}
+{"type":"assistant","sessionId":"session-abc","timestamp":"2026-01-01T10:00:05.000Z","message":{"role":"assistant","model":"claude-test-1","content":[{"type":"text","text":"Looking into the auth bug now."},{"type":"tool_use","name":"Bash","input":{"command":"grep -r refresh_token src/"}}]}}
+{"type":"user","sessionId":"session-abc","timestamp":"2026-01-01T10:01:00.000Z","message":{"role":"user","content":[{"type":"text","text":"Great, ship it"}]}}
+{"type":"assistant","sessionId":"session-abc","timestamp":"2026-01-01T10:01:30.000Z","message":{"role":"assistant","model":"claude-test-1","content":[{"type":"text","text":"Done. The fix adds clock-skew tolerance."}]}}
+not-json-must-be-skipped
