@@ -23,9 +23,9 @@ commands:
   verify    end-to-end write → recall → pack round-trip (exit 0 = healthy)
   export    dump all memory as JSONL to stdout or --out <dir>
   import    load a me0 export (JSONL) from --in <file>
-  dream     consolidation pass: purge expired soft-deletes, decay tiers
+  dream     consolidation pass: purge, dedupe, decay tiers, recompile cards, refresh packs
   op        invoke any verb directly: me0 op <name> '<json-args>'
-  hook      harness hook entrypoint: me0 hook <session-start|session-end> [json]
+  hook      harness hook entrypoint: me0 hook <session-start|prompt|session-end> [json]
 
 flags:
   --uri <mongodb-uri>   override MongoDB URI
@@ -221,20 +221,11 @@ async function cmdImport(args: string[]) {
 async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
-  await withEngine(uri, async (engine, db) => {
-    const purged = await engine.purgeExpired();
-    const staleCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
-    const demoted = await db.collection("memories").updateMany(
-      {
-        tier: "recall",
-        deleted_at: null,
-        "access.count": 0,
-        valid_from: { $lt: staleCutoff },
-      },
-      { $set: { tier: "archive" } },
-    );
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  await withEngine(uri, async (engine) => {
+    const report = await engine.dream(ctxFor(userId));
     console.log(
-      `dream: purged ${purged} expired, demoted ${demoted.modifiedCount} stale to archive`,
+      `dream: purged ${report.purged}, deduped ${report.deduped}, promoted ${report.promoted}, demoted ${report.demoted}, identity_card ${report.identity_card_refreshed ? "refreshed" : "unchanged"}, packs refreshed ${report.packs_refreshed}`,
     );
   });
 }
@@ -253,6 +244,22 @@ async function cmdOp(args: string[]) {
     const result = await invoke(engine, ctxFor(userId), name, JSON.parse(jsonArg));
     console.log(JSON.stringify(result, null, 2));
   });
+}
+
+async function hookPayload(args: string[]): Promise<Record<string, unknown>> {
+  if (args[1] && !args[1].startsWith("--")) return JSON.parse(args[1]);
+  if (!process.stdin.isTTY) {
+    try {
+      const text = await Promise.race([
+        new Response(Bun.stdin.stream()).text(),
+        new Promise<string>((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]);
+      if (text.trim()) return JSON.parse(text);
+    } catch {
+      // fall through: hooks fail open
+    }
+  }
+  return {};
 }
 
 async function cmdHook(args: string[]) {
@@ -280,13 +287,32 @@ async function cmdHook(args: string[]) {
             },
           }),
         );
+      } else if (event === "prompt") {
+        const payload = await hookPayload(args);
+        const prompt = String(payload.prompt ?? payload.user_prompt ?? "");
+        if (prompt) {
+          const episodeId =
+            (payload.episode_id as string | undefined) ?? process.env.ME0_EPISODE_ID ?? undefined;
+          const result = await engine.push(ctx, { prompt, episode_id: episodeId });
+          if (result.pushed.length > 0) {
+            const lines = result.pushed.map((p) => `- [${p.kind}] ${p.text}`).join("\n");
+            console.log(
+              JSON.stringify({
+                hookSpecificOutput: {
+                  hookEventName: "UserPromptSubmit",
+                  additionalContext: `<me0-push>\n${lines}\n</me0-push>`,
+                },
+              }),
+            );
+          }
+        }
       } else if (event === "session-end") {
-        const payload = args[1] && !args[1].startsWith("--") ? JSON.parse(args[1]) : {};
+        const payload = await hookPayload(args);
         if (payload.episode_id) {
           await engine.episodeEnd(ctx, {
-            episode_id: payload.episode_id,
-            summary: payload.summary,
-            success: payload.success,
+            episode_id: payload.episode_id as string,
+            summary: payload.summary as string | undefined,
+            success: payload.success as boolean | undefined,
           });
         }
       } else {
