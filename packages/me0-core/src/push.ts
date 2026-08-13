@@ -22,8 +22,7 @@ export async function push(
   const user = await db.collection<UserDoc>("users").findOne({ user_id: ctx.user_id });
   const minConfidence = user?.settings.push.min_confidence ?? 0.7;
   const maxPerTurn = user?.settings.push.max_per_turn ?? 3;
-  const episodeId =
-    args.episode_id ?? ctx.episode_id ?? (await resolveSessionKey(db, ctx.user_id));
+  const episodeId = args.episode_id ?? ctx.episode_id ?? (await resolveSessionKey(db, ctx.user_id));
 
   const visibility = ctx.remote ? { visibility: "world" } : {};
   // prompts are long free text: any content-word overlap qualifies (confidence gate follows)

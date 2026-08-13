@@ -42,8 +42,6 @@ async function ensureIndexes(db: Db): Promise<void> {
   await db.collection("episodes").createIndex({ user_id: 1, started_at: -1 });
   await db.collection("events").createIndex({ episode_id: 1, ts: 1 });
   await db.collection("retrievals").createIndex({ user_id: 1, ts: -1 });
-  await db
-    .collection("session_state")
-    .createIndex({ user_id: 1, episode_id: 1 }, { unique: true });
+  await db.collection("session_state").createIndex({ user_id: 1, episode_id: 1 }, { unique: true });
   await db.collection("audit").createIndex({ ts: -1 });
 }
