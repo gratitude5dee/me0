@@ -1,13 +1,12 @@
 {
-  "name": "me0-cli",
+  "name": "me0-rfm",
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "bin": { "me0": "src/main.ts" },
+  "main": "src/index.ts",
   "dependencies": {
-    "me0-a2a": "workspace:*",
     "me0-core": "workspace:*",
-    "me0-rfm": "workspace:*"
+    "mongodb": "^6.12.0"
   },
   "devDependencies": {
     "bun-types": "^1.1.0",

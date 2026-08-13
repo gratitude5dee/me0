@@ -26,6 +26,11 @@ Start a task in Claude Code, hit your rate limit, open Codex — and the second 
 - **Nightly dream** (`dream` verb, `me0 dream`) — hard-purge of soft-deletes past 72h, normalized-text dedupe (earliest wins, later ones superseded), heat-based tier promotion/demotion, identity-card recompilation from core memories, cached global pack refresh, audited.
 - **me0-bench** — hermetic evaluation harness (synthetic persona): recall P@1, adversarial abstention, push false-fire/hit rates, pack budget adherence, cross-harness handoff continuity. `bun test` runs it; `me0-bench` scores a live deployment.
 
+## What's in v0.3 (predict & federate)
+
+- **me0-rfm** — the predictive layer. `me0 rfm --out <dir>` exports RFM-friendly flat tables (JSONL: `memories`, `entities`, `edges`, `sessions`, `tool_calls`, `outcomes`, `retrievals`; redacted structure-only by default, `--no-redact` to keep text) for the KumoRFM LocalGraph bridge, and writes deterministic **heuristic predictions** (`retrieval_utility` = used/surfaced ratio, `prefetch` = recency×frequency, `forget` = Ebbinghaus decay) into `predictions` — consumed opportunistically by retrieval ranking. PQL sketches for each task live in `packages/me0-rfm/src/pql.ts`. RFM is an enhancement tier, never a dependency. `me0 dream --rfm` runs it after consolidation.
+- **A2A endpoint** (`me0 serve --a2a [--port 4160] [--a2a-token <tok>]`) — Agent Card at `/.well-known/agent-card.json` with skills `memory.recall`, `memory.context_pack`, `memory.synthesize`, plus the `https://me0.dev/a2a/ext/memory-profile/v1` extension returning a redacted, budgeted profile pack as a DataPart. Hard rule: A2A callers are `remote` — visibility ceiling `world`, local-only verbs rejected, every call audited.
+
 ## Quickstart
 
 ```bash

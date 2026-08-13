@@ -2,6 +2,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { startA2AServer } from "me0-a2a";
 import {
   Me0Engine,
   type OperationContext,
@@ -14,6 +15,7 @@ import {
   invoke,
   operations,
 } from "me0-core";
+import { exportTables, runHeuristics } from "me0-rfm";
 import { configDir, loadConfig, saveConfig } from "./config.js";
 import { defaultPiSessionsDir, importPiSessions, wirePi } from "./pi.js";
 
@@ -31,6 +33,10 @@ commands:
   import-context  backfill CLAUDE.md/AGENTS.md/MEMORY.md/USER.md/SOUL.md into memories
   import-claude   backfill ~/.claude auto-memory + session transcripts (--dir to override)
   dream     consolidation pass: purge, dedupe, decay tiers, recompile cards, refresh packs
+            (--rfm also scores predictions: heuristic prefetch/forget/retrieval-utility)
+  rfm       predictive layer: export flat tables (--out <dir>, --no-redact) + write heuristic
+            predictions; PQL sketches for the KumoRFM bridge documented in me0-rfm
+  serve     HTTP serving layer: me0 serve --a2a [--port 4160] [--a2a-token <tok>]
   op        invoke any verb directly: me0 op <name> '<json-args>'
   hook      harness hook entrypoint: me0 hook <session-start|prompt|session-end> [json]
 
@@ -296,12 +302,61 @@ async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
   const userId = flag(args, "--user") ?? cfg.user_id;
-  await withEngine(uri, async (engine) => {
+  await withEngine(uri, async (engine, db) => {
     const report = await engine.dream(ctxFor(userId));
     console.log(
       `dream: purged ${report.purged}, deduped ${report.deduped}, promoted ${report.promoted}, demoted ${report.demoted}, identity_card ${report.identity_card_refreshed ? "refreshed" : "unchanged"}, packs refreshed ${report.packs_refreshed}`,
     );
+    if (args.includes("--rfm")) {
+      const h = await runHeuristics(db, ctxFor(userId));
+      console.log(
+        `rfm (heuristic): ${h.retrieval_utility} retrieval_utility, ${h.prefetch} prefetch, ${h.forget} forget predictions`,
+      );
+    }
   });
+}
+
+async function cmdRfm(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const out = flag(args, "--out");
+  await withEngine(uri, async (_engine, db) => {
+    const ctx = ctxFor(userId);
+    if (out) {
+      const report = await exportTables(db, userId, out, {
+        redact: !args.includes("--no-redact"),
+      });
+      for (const t of report.tables) console.log(`${t.name}: ${t.rows} rows \u2192 ${t.path}`);
+    }
+    const h = await runHeuristics(db, ctx);
+    console.log(
+      `rfm (heuristic): ${h.retrieval_utility} retrieval_utility, ${h.prefetch} prefetch, ${h.forget} forget predictions written`,
+    );
+  });
+}
+
+async function cmdServe(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  if (!args.includes("--a2a")) {
+    console.error("serve currently supports --a2a only (stdio MCP is `me0-mcp`)");
+    process.exit(1);
+  }
+  const port = Number(flag(args, "--port") ?? 4160);
+  const token = flag(args, "--a2a-token") ?? process.env.ME0_A2A_TOKEN;
+  const store = await connect(uri);
+  await ensureCollections(store.db);
+  const server = startA2AServer(store.db, { userId, port, token });
+  console.log(
+    `me0 A2A endpoint listening on ${server.url} (agent card: ${server.url}.well-known/agent-card.json)`,
+  );
+  console.log(
+    token
+      ? "auth: bearer token required"
+      : "auth: none \u2014 remote callers still see world-visibility memories only",
+  );
 }
 
 async function cmdOp(args: string[]) {
@@ -425,6 +480,10 @@ async function main() {
       return cmdImportClaude(args);
     case "dream":
       return cmdDream(args);
+    case "rfm":
+      return cmdRfm(args);
+    case "serve":
+      return cmdServe(args);
     case "op":
       return cmdOp(args);
     case "hook":

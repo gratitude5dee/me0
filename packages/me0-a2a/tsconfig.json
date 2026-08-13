@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "outDir": "dist", "rootDir": "src" },
   "include": ["src"],
-  "references": [{ "path": "../me0-core" }, { "path": "../me0-rfm" }, { "path": "../me0-a2a" }]
+  "references": [{ "path": "../me0-core" }]
 }
