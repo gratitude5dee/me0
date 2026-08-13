@@ -1,6 +1,6 @@
 import type { Db } from "mongodb";
 import { hybridRecall } from "./retrieval.js";
-import type { OperationContext, UserDoc } from "./types.js";
+import type { EpisodeDoc, OperationContext, UserDoc } from "./types.js";
 import { PROTOCOL_VERSION } from "./types.js";
 
 export interface PushResult {
@@ -22,7 +22,8 @@ export async function push(
   const user = await db.collection<UserDoc>("users").findOne({ user_id: ctx.user_id });
   const minConfidence = user?.settings.push.min_confidence ?? 0.7;
   const maxPerTurn = user?.settings.push.max_per_turn ?? 3;
-  const episodeId = args.episode_id ?? ctx.episode_id ?? "anonymous";
+  const episodeId =
+    args.episode_id ?? ctx.episode_id ?? (await resolveSessionKey(db, ctx.user_id));
 
   const visibility = ctx.remote ? { visibility: "world" } : {};
   // prompts are long free text: any content-word overlap qualifies (confidence gate follows)
@@ -34,7 +35,7 @@ export async function push(
   );
 
   const stateCol = db.collection("session_state");
-  const state = await stateCol.findOne({ episode_id: episodeId });
+  const state = await stateCol.findOne({ user_id: ctx.user_id, episode_id: episodeId });
   const surfaced = new Set<string>((state?.surfaced as string[] | undefined) ?? []);
 
   let suppressed = 0;
@@ -51,7 +52,7 @@ export async function push(
   if (pushed.length > 0) {
     const ts = new Date().toISOString();
     await stateCol.updateOne(
-      { episode_id: episodeId },
+      { user_id: ctx.user_id, episode_id: episodeId },
       {
         $addToSet: { surfaced: { $each: pushed.map((p) => p.doc.memory_id) } },
         $set: { updated_at: ts },
@@ -83,4 +84,24 @@ export async function push(
     })),
     suppressed_count: suppressed,
   };
+}
+
+/**
+ * When no episode id is available, prefer the user's most recent active episode
+ * so suppression stays per-session; otherwise fall back to a per-user daily key
+ * so the surfaced set resets rather than accumulating forever.
+ */
+async function resolveSessionKey(db: Db, userId: string): Promise<string> {
+  try {
+    const active = await db
+      .collection<EpisodeDoc>("episodes")
+      .find({ user_id: userId, status: "active" })
+      .sort({ started_at: -1 })
+      .limit(1)
+      .toArray();
+    if (active[0]) return active[0].episode_id;
+  } catch {
+    // episodes lookup is best-effort
+  }
+  return `anon:${userId}:${new Date().toISOString().slice(0, 10)}`;
 }

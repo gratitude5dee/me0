@@ -395,7 +395,7 @@ export class Me0Engine {
   async delta(ctx: OperationContext, args: { cursor?: string }) {
     const episodeId = ctx.episode_id ?? "anonymous";
     const stateCol = this.db.collection("session_state");
-    const state = await stateCol.findOne({ episode_id: episodeId });
+    const state = await stateCol.findOne({ user_id: ctx.user_id, episode_id: episodeId });
     const since =
       args.cursor ?? (state?.delta_cursor as string | undefined) ?? "1970-01-01T00:00:00.000Z";
 
@@ -413,7 +413,7 @@ export class Me0Engine {
 
     const cursor = changes.length > 0 ? (changes[changes.length - 1]?.valid_from ?? since) : since;
     await stateCol.updateOne(
-      { episode_id: episodeId },
+      { user_id: ctx.user_id, episode_id: episodeId },
       {
         $set: { delta_cursor: cursor, updated_at: now() },
         $setOnInsert: { standing_entities: [], surfaced: [] },
