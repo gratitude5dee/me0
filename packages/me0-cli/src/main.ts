@@ -125,10 +125,13 @@ async function cmdInit(args: string[]) {
 
   // Hermes wiring
   if (detectHermes()) {
-    if (wireHermesConfig(uri, userId)) {
+    const status = wireHermesConfig(uri, userId);
+    if (status === "wired") {
       console.log(`hermes wired: ${hermesHome()}/config.yaml ([mcp_servers.me0])`);
-    } else {
+    } else if (status === "present") {
       console.log("hermes already wired");
+    } else {
+      console.log("hermes NOT wired — see instructions above to add the entry manually");
     }
     printHermesGuidance();
   } else {

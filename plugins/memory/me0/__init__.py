@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -67,10 +68,14 @@ class Me0MemoryProvider(MemoryProvider):
     # -- Core lifecycle -----------------------------------------------------
 
     def is_available(self) -> bool:
-        """me0 CLI on PATH and a config file present. No network calls."""
+        """me0 CLI on PATH and configured (env vars or config file). No network calls."""
         if shutil.which("me0") is None:
             return False
-        return (Path.home() / ".me0" / "config.json").exists()
+        if os.environ.get("ME0_MONGODB_URI"):
+            return True
+        data_dir = os.environ.get("ME0_DATA")
+        root = Path(data_dir) if data_dir else Path.home() / ".me0"
+        return (root / "config.json").exists()
 
     def initialize(self, session_id: str, **kwargs) -> None:
         self._session_id = session_id

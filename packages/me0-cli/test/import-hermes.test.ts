@@ -155,11 +155,11 @@ describe("hermes config wiring", () => {
   test("creates config.yaml with mcp_servers.me0 and is idempotent", () => {
     const home = mkdtempSync(join(tmpdir(), "hermes-config-"));
     try {
-      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe(true);
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe("wired");
       const written = readFileSync(join(home, "config.yaml"), "utf-8");
       expect(written).toContain("mcp_servers:");
       expect(written).toContain(me0McpYamlBlock("mongodb://127.0.0.1:27017", "me"));
-      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe(false);
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe("present");
       expect(readFileSync(join(home, "config.yaml"), "utf-8")).toBe(written);
     } finally {
       rmSync(home, { recursive: true, force: true });
@@ -193,7 +193,7 @@ describe("hermes config wiring", () => {
         join(home, "config.yaml"),
         'model: hermes-4\nmcp_servers:\n  other:\n    command: "other-mcp"\n',
       );
-      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe(true);
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe("wired");
       const written = readFileSync(join(home, "config.yaml"), "utf-8");
       expect(written.indexOf("me0:")).toBeGreaterThan(written.indexOf("mcp_servers:"));
       expect(written).toContain("  other:");
@@ -210,7 +210,7 @@ describe("hermes config wiring", () => {
         join(home, "config.yaml"),
         'mcp_servers:\n    other:\n        command: "other-mcp"\n',
       );
-      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe(true);
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe("wired");
       const written = readFileSync(join(home, "config.yaml"), "utf-8");
       expect(written).toContain("\n    me0:\n");
       expect(written).toContain('\n        command: "me0-mcp"\n');
@@ -225,8 +225,37 @@ describe("hermes config wiring", () => {
     try {
       const original = 'mcp_servers: {other: {command: "other-mcp"}}\n';
       writeFileSync(join(home, "config.yaml"), original);
-      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe(false);
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe("manual");
       expect(readFileSync(join(home, "config.yaml"), "utf-8")).toBe(original);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("handles a final mcp_servers line without trailing newline", () => {
+    const home = mkdtempSync(join(tmpdir(), "hermes-config6-"));
+    try {
+      writeFileSync(join(home, "config.yaml"), "model: hermes-4\nmcp_servers:");
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe("wired");
+      const written = readFileSync(join(home, "config.yaml"), "utf-8");
+      expect(written.match(/^mcp_servers:/gm)?.length).toBe(1);
+      expect(written).toContain("\n  me0:\n");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("me0 key outside mcp_servers does not block wiring", () => {
+    const home = mkdtempSync(join(tmpdir(), "hermes-config7-"));
+    try {
+      writeFileSync(
+        join(home, "config.yaml"),
+        'memory:\n  provider: me0\n  me0:\n    foo: 1\nmcp_servers:\n  other:\n    command: "x"\n',
+      );
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe("wired");
+      const written = readFileSync(join(home, "config.yaml"), "utf-8");
+      expect(written).toContain('command: "me0-mcp"');
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe("present");
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

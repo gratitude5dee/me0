@@ -25,42 +25,54 @@ export function me0McpYamlBlock(uri: string, userId: string, indent = "  "): str
   ].join("\n");
 }
 
+export type HermesWireStatus = "wired" | "present" | "manual";
+
 /**
  * Add the me0 MCP server entry to Hermes's config.yaml.
  * Inserts under an existing `mcp_servers:` key when present (matching the
  * indentation of its existing children), otherwise appends a new block.
- * No-op when an me0 entry already exists; bails out (with printed manual
- * instructions) when `mcp_servers` uses flow style (`mcp_servers: {...}`),
- * which cannot be safely extended textually.
- * Returns true when the file was modified.
+ * Returns "present" when an me0 server entry already exists, "manual" when
+ * `mcp_servers` uses flow style (`mcp_servers: {...}`) — which cannot be
+ * safely extended textually, so manual instructions are printed — and
+ * "wired" when the file was modified.
  */
-export function wireHermesConfig(uri: string, userId: string, home = hermesHome()): boolean {
+export function wireHermesConfig(
+  uri: string,
+  userId: string,
+  home = hermesHome(),
+): HermesWireStatus {
   const configPath = join(home, "config.yaml");
-  const current = existsSync(configPath) ? readFileSync(configPath, "utf-8") : "";
-  if (/^\s+me0:/m.test(current)) return false;
+  const raw = existsSync(configPath) ? readFileSync(configPath, "utf-8") : "";
+  // normalize so a final `mcp_servers:` line without trailing newline still matches
+  const current = raw.length > 0 && !raw.endsWith("\n") ? `${raw}\n` : raw;
   let next: string;
   const match = current.match(/^mcp_servers:([^\n]*)\n/m);
   if (match?.index !== undefined) {
-    if (match[1] !== undefined && match[1].trim() !== "" && !match[1].trim().startsWith("#")) {
+    const rest = match[1]?.trim() ?? "";
+    if (rest !== "" && !rest.startsWith("#")) {
+      if (/\bme0\b/.test(rest)) return "present";
       // flow style (e.g. `mcp_servers: {}`): appending block children would corrupt it
       console.error(
         `could not wire hermes automatically (${configPath} uses flow-style mcp_servers).`,
       );
       console.error("add this entry manually:");
       console.error(`mcp_servers:\n${me0McpYamlBlock(uri, userId)}`);
-      return false;
+      return "manual";
     }
+    // scope the idempotency check to the mcp_servers block's children
     const after = current.slice(match.index + match[0].length);
-    const child = after.match(/^([ \t]+)\S/m);
+    const blockEnd = after.search(/^\S/m);
+    const block = blockEnd === -1 ? after : after.slice(0, blockEnd);
+    if (/^[ \t]+me0:/m.test(block)) return "present";
+    const child = block.match(/^([ \t]+)\S/m);
     const entry = me0McpYamlBlock(uri, userId, child?.[1] ?? "  ");
     const insertAt = match.index + match[0].length;
     next = current.slice(0, insertAt) + entry + current.slice(insertAt);
   } else {
-    const sep = current.length > 0 && !current.endsWith("\n") ? "\n" : "";
-    next = `${current}${sep}mcp_servers:\n${me0McpYamlBlock(uri, userId)}`;
+    next = `${current}mcp_servers:\n${me0McpYamlBlock(uri, userId)}`;
   }
   writeFileSync(configPath, next);
-  return true;
+  return "wired";
 }
 
 export function printHermesGuidance(home = hermesHome()): void {
