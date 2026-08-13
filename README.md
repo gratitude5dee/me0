@@ -59,6 +59,17 @@ me0 op handoff '{"episode_id":"ep_...","banked_state":"Fixing auth bug in api/lo
 me0 op context_pack '{"resume":"hd_..."}'
 ```
 
+### pi adapter (v0.2)
+
+pi has no built-in MCP, so me0 ships a native pi extension (`extensions/pi/me0.ts`) that registers `memory_*` tools (recall, remember, entity, context_pack, delta, episode_recall, handoff, whoami, me0_stats) by delegating to the me0-core operation registry with `harness: "pi"`. It injects the context pack at session start, logs tool calls into the active episode, and closes the episode on shutdown — all fire-and-forget and fail-open. `me0 init` detects `~/.pi/agent/` and installs the extension into `~/.pi/agent/extensions/`.
+
+Backfill past pi sessions (deterministic, no LLM, idempotent — re-running never duplicates):
+
+```bash
+me0 import-pi                 # walks ~/.pi/agent/sessions/**/*.jsonl
+me0 import-pi --dir /path/to/sessions
+```
+
 ### Backfill importers (migration path)
 
 Bring your existing agent context with you — deterministically, no LLM:

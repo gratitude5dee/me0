@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"def67890-aaaa-bbbb-cccc-ddddeeeeffff","timestamp":"2026-01-03T09:00:00.000Z","cwd":"/home/user/other"}
+{"type":"message","id":"9988ff00","parentId":null,"timestamp":"2026-01-03T09:00:05.000Z","message":{"role":"user","content":[{"type":"text","text":"summarize yesterday"}],"timestamp":"2026-01-03T09:00:05.000Z"}}
+not-json-should-be-tolerated
+{"type":"model_change","id":"77665544","parentId":"9988ff00","timestamp":"2026-01-03T09:00:06.000Z","model":"test-model-2"}
