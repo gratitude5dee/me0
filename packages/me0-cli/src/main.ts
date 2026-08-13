@@ -12,17 +12,19 @@ import {
   operations,
 } from "me0-core";
 import { configDir, loadConfig, saveConfig } from "./config.js";
+import { defaultPiSessionsDir, importPiSessions, wirePi } from "./pi.js";
 
 const HELP = `me0 — the zeroth memory layer
 
 usage: me0 <command> [flags]
 
 commands:
-  init      provision storage, wire harnesses (Claude Code, Codex), seed identity
+  init      provision storage, wire harnesses (Claude Code, Codex, pi), seed identity
   doctor    diagnose config, storage, and harness wiring
   verify    end-to-end write → recall → pack round-trip (exit 0 = healthy)
   export    dump all memory as JSONL to stdout or --out <dir>
   import    load a me0 export (JSONL) from --in <file>
+  import-pi backfill pi JSONL session trees [--dir ~/.pi/agent/sessions]
   dream     consolidation pass: purge expired soft-deletes, decay tiers
   op        invoke any verb directly: me0 op <name> '<json-args>'
   hook      harness hook entrypoint: me0 hook <session-start|session-end> [json]
@@ -111,6 +113,9 @@ async function cmdInit(args: string[]) {
   } else {
     console.log("codex not detected (~/.codex missing) — skipped");
   }
+
+  // pi wiring
+  for (const line of wirePi()) console.log(line);
 
   console.log(
     "claude code: install the me0 plugin (this repo) via the plugin marketplace, or add mcp.json + hooks/hooks.json to your project.",
@@ -218,6 +223,26 @@ async function cmdImport(args: string[]) {
   });
 }
 
+async function cmdImportPi(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const dir = flag(args, "--dir") ?? defaultPiSessionsDir();
+  if (!existsSync(dir)) {
+    console.error(`pi sessions directory not found: ${dir}`);
+    process.exit(1);
+  }
+  await withEngine(uri, async (engine, db) => {
+    const ctx = ctxFor(userId);
+    ctx.harness = "pi";
+    await engine.ensureUser(ctx);
+    const stats = await importPiSessions(db, ctx, dir);
+    console.log(
+      `import-pi: ${stats.imported} episodes (+${stats.events} events) imported, ${stats.skipped} already present, ${stats.files} files scanned`,
+    );
+  });
+}
+
 async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
@@ -313,6 +338,8 @@ async function main() {
       return cmdExport(args);
     case "import":
       return cmdImport(args);
+    case "import-pi":
+      return cmdImportPi(args);
     case "dream":
       return cmdDream(args);
     case "op":
