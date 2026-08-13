@@ -217,19 +217,25 @@ export async function importPiSessions(
       handoff: null,
       tags: ["pi-import"],
     };
-    // Events first, episode last: the episode doc is the idempotency key, so
-    // its presence must imply the events landed. The deleteMany makes retries
-    // (and imports of the same session under another user) converge instead
-    // of duplicating the shared per-episode event stream.
-    await db.collection<EventDoc>("events").deleteMany({ episode_id: episodeId });
-    if (events.length > 0) {
-      await db
-        .collection<EventDoc>("events")
-        .insertMany(events.map((e) => ({ ...e, episode_id: episodeId })));
+    // Events first, episode last: an episode doc's presence implies its event
+    // stream landed. Events carry no user_id, so the stream is shared across
+    // users; only rewrite it when no episode (for any user) references it yet
+    // — that repairs interrupted runs without destroying a stream another
+    // user already imported.
+    const streamOwned = await db
+      .collection<EpisodeDoc>("episodes")
+      .findOne({ episode_id: episodeId }, { projection: { _id: 1 } });
+    if (!streamOwned) {
+      await db.collection<EventDoc>("events").deleteMany({ episode_id: episodeId });
+      if (events.length > 0) {
+        await db
+          .collection<EventDoc>("events")
+          .insertMany(events.map((e) => ({ ...e, episode_id: episodeId })));
+      }
+      stats.events += events.length;
     }
     await db.collection<EpisodeDoc>("episodes").insertOne(episode);
     stats.imported++;
-    stats.events += events.length;
   }
   return stats;
 }

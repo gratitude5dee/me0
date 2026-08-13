@@ -95,13 +95,27 @@ describe("import-pi", () => {
 
   test("a session missing its events (interrupted run) is repaired on re-import", async () => {
     const episodeId = "ep_pi_abc12345-1111-2222-3333-444455556666";
+    // Simulate an import that died before its episode insert: no episode doc
+    // (for any user) references the stream, and only partial events landed.
+    await store.db.collection("episodes").deleteMany({ episode_id: episodeId });
     await store.db
-      .collection("episodes")
-      .deleteOne({ user_id: ctx.user_id, episode_id: episodeId });
-    await store.db.collection("events").deleteMany({ episode_id: episodeId });
+      .collection("events")
+      .deleteMany({ episode_id: episodeId, type: { $ne: "prompt" } });
     const stats = await importPiSessions(store.db, ctx, FIXTURES);
     expect(stats.imported).toBe(1);
     expect(stats.skipped).toBe(1);
     expect(await store.db.collection("events").countDocuments({ episode_id: episodeId })).toBe(5);
+  });
+
+  test("re-importing under another user never rewrites a stream an episode already owns", async () => {
+    const episodeId = "ep_pi_abc12345-1111-2222-3333-444455556666";
+    // Poke the stream so a rewrite would be detectable, then import for a
+    // fresh user: since episodes already reference the stream, it must be
+    // left untouched.
+    await store.db.collection("events").deleteOne({ episode_id: episodeId, type: "command" });
+    const stats = await importPiSessions(store.db, { ...ctx, user_id: "third-user" }, FIXTURES);
+    expect(stats.imported).toBe(2);
+    expect(stats.events).toBe(0);
+    expect(await store.db.collection("events").countDocuments({ episode_id: episodeId })).toBe(4);
   });
 });
