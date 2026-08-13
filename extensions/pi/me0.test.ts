@@ -149,6 +149,20 @@ describe("pi extension", () => {
     expect(closed).toBe(1);
   });
 
+  test("a new session after shutdown reacquires deps instead of reusing the closed client", async () => {
+    const pi = new FakePi();
+    let acquisitions = 0;
+    registerMe0(pi, async () => {
+      acquisitions++;
+      return { engine, ctx: { ...ctx }, close: async () => {} };
+    });
+    await pi.emit("session_start");
+    await pi.emit("session_shutdown");
+    await pi.emit("session_start");
+    expect(acquisitions).toBe(2);
+    expect(pi.sent.length).toBe(2);
+  });
+
   test("overlapping first uses share one deps acquisition; failures allow retry", async () => {
     const pi = new FakePi();
     let calls = 0;

@@ -179,10 +179,16 @@ export function registerMe0(pi: PiApi, provideDeps: Me0PiDepsProvider): void {
     void (async () => {
       const d = await deps();
       if (!d) return;
-      if (d.ctx.episode_id) {
-        await d.engine.episodeEnd(d.ctx, { episode_id: d.ctx.episode_id });
+      // Drop the memoized deps so a later session in the same process
+      // reconnects instead of reusing the closed client.
+      cached = null;
+      try {
+        if (d.ctx.episode_id) {
+          await d.engine.episodeEnd(d.ctx, { episode_id: d.ctx.episode_id });
+        }
+      } finally {
+        await d.close?.();
       }
-      await d.close?.();
     })().catch((err) => console.error(`me0 pi extension (fail-open): ${errMsg(err)}`));
   });
 }

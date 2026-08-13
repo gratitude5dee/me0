@@ -21,5 +21,10 @@ description: How to run and end-to-end test the me0 memory layer (CLI, MCP serve
 - Launch: `ME0_MONGODB_URI=... ME0_USER_ID=... bun packages/me0-mcp/src/server.ts`.
 - Pipe newline-delimited JSON-RPC: initialize → notifications/initialized → tools/list → tools/call. Note: the server does NOT exit when stdin closes — run it backgrounded/kill it, don't wait for the pipeline to finish.
 
+## pi adapter
+- Backfill: `me0 import-pi --dir <sessions-dir> --uri mongodb://127.0.0.1:27017 --user <id>` — deterministic + idempotent (key `ep_pi_<session id>`); rerun should report all files as "already present". Fixtures: `packages/me0-cli/test/fixtures/pi-sessions` (2 sessions → 2 episodes, 6 events).
+- Verify imports with `me0 op episode_recall '{"query":"pi"}'` (note: episode_recall requires a `query` arg).
+- Extension wiring: `mkdir -p ~/.pi/agent` then `me0 init` writes a wrapper to `~/.pi/agent/extensions/me0.ts` re-exporting `extensions/pi/me0.ts`; second init prints "pi already wired". Extension unit tests live in `extensions/pi/me0.test.ts` and run under `bun test`.
+
 ## Hooks
 - `me0 hook session-start` prints Claude Code `hookSpecificOutput` JSON; with Mongo down it must still exit 0 (fail-open, error on stderr). Restart mongo (`docker start me0-mongo`) afterwards.
