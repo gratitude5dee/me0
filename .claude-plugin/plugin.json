@@ -1,0 +1,8 @@
+{
+  "name": "me0",
+  "version": "0.1.0",
+  "description": "Portable personal context graph and agent session memory (MongoDB-backed).",
+  "author": { "name": "GRATITUD3" },
+  "hooks": "../hooks/hooks.json",
+  "mcpServers": "../mcp.json"
+}

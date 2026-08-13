@@ -1,0 +1,18 @@
+{
+  "name": "me0-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --build packages/me0-core packages/me0-mcp packages/me0-cli",
+    "test": "bun test",
+    "lint": "bunx @biomejs/biome check ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "typescript": "^5.7.0"
+  }
+}
