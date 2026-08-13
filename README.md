@@ -60,6 +60,33 @@ Replace Hermes's 2,200-char `MEMORY.md` cap with your context graph:
 - **MCP verbs** — `me0 init` detects `~/.hermes/` and adds an `mcp_servers.me0` entry to `~/.hermes/config.yaml` so Hermes can call the verbs directly.
 - **Backfill** — `me0 import-hermes [--db ~/.hermes/state.db] [--home ~/.hermes]` imports Hermes sessions/messages from `state.db` as episodes/events and `memories/MEMORY.md` / `USER.md` / `SOUL.md` as typed memories. Deterministic (no LLM), idempotent — safe to re-run.
 
+### pi adapter (v0.2)
+
+pi has no built-in MCP, so me0 ships a native pi extension (`extensions/pi/me0.ts`) that registers `memory_*` tools (recall, remember, entity, context_pack, delta, episode_recall, handoff, whoami, me0_stats) by delegating to the me0-core operation registry with `harness: "pi"`. It injects the context pack at session start, logs tool calls into the active episode, and closes the episode on shutdown — all fire-and-forget and fail-open. `me0 init` detects `~/.pi/agent/` and installs the extension into `~/.pi/agent/extensions/`.
+
+Backfill past pi sessions (deterministic, no LLM, idempotent — re-running never duplicates):
+
+```bash
+me0 import-pi                 # walks ~/.pi/agent/sessions/**/*.jsonl
+me0 import-pi --dir /path/to/sessions
+```
+
+### Backfill importers (migration path)
+
+Bring your existing agent context with you — deterministically, no LLM:
+
+```bash
+# CLAUDE.md / AGENTS.md / MEMORY.md / USER.md / SOUL.md → typed memories
+# (walks up from cwd + checks ~, ~/.claude, ~/.codex; or pass explicit paths)
+me0 import-context [paths...]
+
+# Claude Code auto-memory (projects/*/MEMORY.md etc.) + session transcripts
+# (projects/*/*.jsonl) → memories + episodes/events
+me0 import-claude [--dir ~/.claude]
+```
+
+Markdown headings become concept-entity topic hints; bullets/paragraphs become individual memories with kind heuristics (`prefer/always/never` → preference, `decided/decision` → decision, imperative how-tos → procedure, else fact). Every import is provenance-stamped (`method: "deterministic"`, confidence 0.6, source file recorded) and idempotent — re-imports dedupe on normalized text and transcripts key on session id (NOOP on duplicate).
+
 ## Design principles (short form)
 
 User-centric, not brain-centric · verbs-first, additive-forever · deterministic before LLM · provenance + bi-temporality on every memory · honest abstention ("no recorded memory", never a guess) · token cost is a first-class metric · fail-open hooks · consent-scoped sharing (remote callers are world-visibility only; `remember`/`forget`/`handoff` are local-only) · one tree, many harnesses.

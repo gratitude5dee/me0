@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "." },
+  "include": ["me0.ts"],
+  "references": [{ "path": "../../packages/me0-core" }]
+}
