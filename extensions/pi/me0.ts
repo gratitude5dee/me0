@@ -77,6 +77,8 @@ export interface PiApi {
 export interface Me0PiDeps {
   engine: Me0Engine;
   ctx: OperationContext;
+  /** Release underlying resources (e.g. the Mongo client). */
+  close?: () => Promise<void>;
 }
 
 export type Me0PiDepsProvider = () => Promise<Me0PiDeps>;
@@ -91,13 +93,16 @@ function errMsg(err: unknown): string {
  * fail-open (tools report the outage, event handlers swallow it).
  */
 export function registerMe0(pi: PiApi, provideDeps: Me0PiDepsProvider): void {
-  let cached: Me0PiDeps | null = null;
+  // Memoize the in-flight promise (not just the resolved value) so
+  // overlapping first uses share one connection; reset on rejection so a
+  // later call can retry.
+  let cached: Promise<Me0PiDeps> | null = null;
   const deps = async (): Promise<Me0PiDeps | null> => {
-    if (cached) return cached;
+    cached ??= provideDeps();
     try {
-      cached = await provideDeps();
-      return cached;
+      return await cached;
     } catch (err) {
+      cached = null;
       console.error(`me0 pi extension (fail-open): ${errMsg(err)}`);
       return null;
     }
@@ -173,8 +178,17 @@ export function registerMe0(pi: PiApi, provideDeps: Me0PiDepsProvider): void {
   pi.on("session_shutdown", () => {
     void (async () => {
       const d = await deps();
-      if (!d?.ctx.episode_id) return;
-      await d.engine.episodeEnd(d.ctx, { episode_id: d.ctx.episode_id });
+      if (!d) return;
+      // Drop the memoized deps so a later session in the same process
+      // reconnects instead of reusing the closed client.
+      cached = null;
+      try {
+        if (d.ctx.episode_id) {
+          await d.engine.episodeEnd(d.ctx, { episode_id: d.ctx.episode_id });
+        }
+      } finally {
+        await d.close?.();
+      }
     })().catch((err) => console.error(`me0 pi extension (fail-open): ${errMsg(err)}`));
   });
 }
@@ -201,6 +215,7 @@ async function defaultDeps(): Promise<Me0PiDeps> {
   await ensureCollections(store.db);
   return {
     engine: new Me0Engine(store.db),
+    close: () => store.close(),
     ctx: {
       user_id: cfg.user_id,
       harness: "pi",
