@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "mongodb";
+import { type DreamReport, dream } from "./dream.js";
+import { type PushResult, push } from "./push.js";
+import { hybridRecall } from "./retrieval.js";
 import type {
   CreateSafety,
   EntityDoc,
@@ -94,56 +97,8 @@ export class Me0Engine {
     ctx: OperationContext,
     args: { query: string; kind?: MemoryKind; tier?: MemoryTier; limit?: number },
   ): Promise<RecallResponse> {
-    const limit = Math.min(args.limit ?? 8, 50);
-    const filter: Record<string, unknown> = {
-      user_id: ctx.user_id,
-      deleted_at: null,
-      valid_until: null,
-      ...this.visibilityFilter(ctx),
-    };
-    if (args.kind) filter.kind = args.kind;
-    if (args.tier) filter.tier = args.tier;
-
     const memories = this.db.collection<MemoryDoc>("memories");
-    let docs: Array<MemoryDoc & { textScore?: number }> = [];
-    try {
-      docs = (await memories
-        .find({ ...filter, $text: { $search: args.query } })
-        .project({ textScore: { $meta: "textScore" } })
-        .sort({ textScore: { $meta: "textScore" } })
-        .limit(limit * 3)
-        .toArray()) as Array<MemoryDoc & { textScore?: number }>;
-    } catch {
-      docs = [];
-    }
-    if (docs.length === 0) {
-      const words = args.query
-        .split(/\s+/)
-        .filter((w) => w.length > 2)
-        .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-      if (words.length > 0) {
-        docs = (await memories
-          .find({ ...filter, text: { $regex: words.join("|"), $options: "i" } })
-          .limit(limit * 3)
-          .toArray()) as Array<MemoryDoc & { textScore?: number }>;
-      }
-    }
-
-    const tierBoost: Record<MemoryTier, number> = {
-      core: 0.3,
-      standing: 0.2,
-      recall: 0.1,
-      archive: 0,
-    };
-    const scored = docs
-      .map((d) => {
-        const base = d.textScore ?? 0.5;
-        const recencyDays = (Date.now() - new Date(d.valid_from).getTime()) / 86400000;
-        const recency = Math.max(0, 0.2 - recencyDays * 0.002);
-        return { doc: d, score: base + tierBoost[d.tier] + recency + d.notability * 0.1 };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+    const { scored, poolSize } = await hybridRecall(this.db, ctx, args, this.visibilityFilter(ctx));
 
     if (scored.length === 0) {
       return {
@@ -179,7 +134,7 @@ export class Me0Engine {
       kind: s.doc.kind,
       tier: s.doc.tier,
       score: Math.round(s.score * 1000) / 1000,
-      evidence: (s.doc.textScore ?? 0) > 1 ? "keyword" : "weak_semantic",
+      evidence: s.evidence,
       valid_from: s.doc.valid_from,
       entity_refs: s.doc.entity_refs,
     }));
@@ -189,7 +144,7 @@ export class Me0Engine {
       abstained: false,
       _meta: {
         budget_used: results.reduce((n, r) => n + estimateTokens(r.text), 0),
-        dropped_count: Math.max(0, docs.length - results.length),
+        dropped_count: Math.max(0, poolSize - results.length),
       },
     };
   }
@@ -440,7 +395,7 @@ export class Me0Engine {
   async delta(ctx: OperationContext, args: { cursor?: string }) {
     const episodeId = ctx.episode_id ?? "anonymous";
     const stateCol = this.db.collection("session_state");
-    const state = await stateCol.findOne({ episode_id: episodeId });
+    const state = await stateCol.findOne({ user_id: ctx.user_id, episode_id: episodeId });
     const since =
       args.cursor ?? (state?.delta_cursor as string | undefined) ?? "1970-01-01T00:00:00.000Z";
 
@@ -458,7 +413,7 @@ export class Me0Engine {
 
     const cursor = changes.length > 0 ? (changes[changes.length - 1]?.valid_from ?? since) : since;
     await stateCol.updateOne(
-      { episode_id: episodeId },
+      { user_id: ctx.user_id, episode_id: episodeId },
       {
         $set: { delta_cursor: cursor, updated_at: now() },
         $setOnInsert: { standing_entities: [], surfaced: [] },
@@ -701,6 +656,19 @@ export class Me0Engine {
       counts: { memories, entities, edges, episodes, retrievals },
       health: "ok",
     };
+  }
+
+  async push(
+    ctx: OperationContext,
+    args: { prompt: string; episode_id?: string },
+  ): Promise<PushResult> {
+    if (ctx.remote) throw new Error("push is not permitted for remote callers");
+    return push(this.db, ctx, args);
+  }
+
+  async dream(ctx: OperationContext): Promise<DreamReport> {
+    if (ctx.remote) throw new Error("dream is not permitted for remote callers");
+    return dream(this.db, ctx);
   }
 
   async purgeExpired(): Promise<number> {

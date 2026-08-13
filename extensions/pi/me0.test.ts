@@ -134,6 +134,60 @@ describe("pi extension", () => {
     expect(ep?.ended_at).not.toBeNull();
   });
 
+  test("session_shutdown releases resources via close", async () => {
+    const pi = new FakePi();
+    let closed = 0;
+    registerMe0(pi, async () => ({
+      engine,
+      ctx: { ...ctx },
+      close: async () => {
+        closed++;
+      },
+    }));
+    await pi.emit("session_start");
+    await pi.emit("session_shutdown");
+    expect(closed).toBe(1);
+  });
+
+  test("a new session after shutdown reacquires deps instead of reusing the closed client", async () => {
+    const pi = new FakePi();
+    let acquisitions = 0;
+    registerMe0(pi, async () => {
+      acquisitions++;
+      return { engine, ctx: { ...ctx }, close: async () => {} };
+    });
+    await pi.emit("session_start");
+    await pi.emit("session_shutdown");
+    await pi.emit("session_start");
+    expect(acquisitions).toBe(2);
+    expect(pi.sent.length).toBe(2);
+  });
+
+  test("overlapping first uses share one deps acquisition; failures allow retry", async () => {
+    const pi = new FakePi();
+    let calls = 0;
+    let fail = true;
+    registerMe0(pi, async () => {
+      calls++;
+      await new Promise((r) => setTimeout(r, 20));
+      if (fail) throw new Error("mongo down");
+      return { engine, ctx: { ...ctx } };
+    });
+    const recall = pi.tools.get("memory_recall");
+    const [a, b] = await Promise.all([
+      recall?.execute("t4", { query: "x" }),
+      recall?.execute("t5", { query: "x" }),
+    ]);
+    expect(a?.isError).toBe(true);
+    expect(b?.isError).toBe(true);
+    expect(calls).toBe(1); // concurrent first uses shared one in-flight acquisition
+
+    fail = false;
+    const ok = await recall?.execute("t6", { query: "x" });
+    expect(ok?.isError).toBeUndefined(); // rejection was not cached; retry succeeded
+    expect(calls).toBe(2);
+  });
+
   test("fail-open: unavailable memory never throws into pi", async () => {
     const pi = new FakePi();
     registerMe0(pi, async () => {

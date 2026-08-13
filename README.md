@@ -19,6 +19,13 @@ Start a task in Claude Code, hit your rate limit, open Codex — and the second 
 - **Adapters** — Claude Code plugin (SessionStart/SessionEnd hooks inject the context pack and close episodes) and Codex (`config.toml` MCP entry + `AGENTS.md` preamble), wired automatically by `me0 init`.
 - **Skills** — `me0`, `me0-handoff`, `me0-setup`.
 
+## What's in v0.2 (core)
+
+- **Hybrid retrieval** — `recall` fuses three arms (text index, keyword, entity/alias graph) with reciprocal rank fusion, a content-word precision gate (abstains instead of guessing), and opportunistic utility weights from the `predictions` collection. App-level fusion keeps local deployments working; native `$rankFusion` covers the same shape on MongoDB 8.1+/Atlas.
+- **Gated push** (`push` verb + `me0 hook prompt` UserPromptSubmit hook) — per-turn ambient recall: confidence-gated (default ≥0.7), capped (default ≤3), and suppressed for memories already surfaced this session; every push is logged to `retrievals`.
+- **Nightly dream** (`dream` verb, `me0 dream`) — hard-purge of soft-deletes past 72h, normalized-text dedupe (earliest wins, later ones superseded), heat-based tier promotion/demotion, identity-card recompilation from core memories, cached global pack refresh, audited.
+- **me0-bench** — hermetic evaluation harness (synthetic persona): recall P@1, adversarial abstention, push false-fire/hit rates, pack budget adherence, cross-harness handoff continuity. `bun test` runs it; `me0-bench` scores a live deployment.
+
 ## Quickstart
 
 ```bash

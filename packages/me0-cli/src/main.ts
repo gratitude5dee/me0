@@ -34,9 +34,9 @@ commands:
   import-pi backfill pi JSONL session trees [--dir ~/.pi/agent/sessions]
   import-context  backfill CLAUDE.md/AGENTS.md/MEMORY.md/USER.md/SOUL.md into memories
   import-claude   backfill ~/.claude auto-memory + session transcripts (--dir to override)
-  dream     consolidation pass: purge expired soft-deletes, decay tiers
+  dream     consolidation pass: purge, dedupe, decay tiers, recompile cards, refresh packs
   op        invoke any verb directly: me0 op <name> '<json-args>'
-  hook      harness hook entrypoint: me0 hook <session-start|session-end> [json]
+  hook      harness hook entrypoint: me0 hook <session-start|prompt|session-end> [json]
 
 flags:
   --uri <mongodb-uri>   override MongoDB URI
@@ -332,20 +332,11 @@ async function cmdImportClaude(args: string[]) {
 async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
-  await withEngine(uri, async (engine, db) => {
-    const purged = await engine.purgeExpired();
-    const staleCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
-    const demoted = await db.collection("memories").updateMany(
-      {
-        tier: "recall",
-        deleted_at: null,
-        "access.count": 0,
-        valid_from: { $lt: staleCutoff },
-      },
-      { $set: { tier: "archive" } },
-    );
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  await withEngine(uri, async (engine) => {
+    const report = await engine.dream(ctxFor(userId));
     console.log(
-      `dream: purged ${purged} expired, demoted ${demoted.modifiedCount} stale to archive`,
+      `dream: purged ${report.purged}, deduped ${report.deduped}, promoted ${report.promoted}, demoted ${report.demoted}, identity_card ${report.identity_card_refreshed ? "refreshed" : "unchanged"}, packs refreshed ${report.packs_refreshed}`,
     );
   });
 }
@@ -364,6 +355,26 @@ async function cmdOp(args: string[]) {
     const result = await invoke(engine, ctxFor(userId), name, JSON.parse(jsonArg));
     console.log(JSON.stringify(result, null, 2));
   });
+}
+
+async function hookPayload(args: string[]): Promise<Record<string, unknown>> {
+  if (args[1] && !args[1].startsWith("--")) return JSON.parse(args[1]);
+  if (!process.stdin.isTTY) {
+    try {
+      const text = await Promise.race([
+        new Response(Bun.stdin.stream()).text(),
+        new Promise<string>((resolve) => setTimeout(() => resolve(""), 2000)),
+      ]);
+      if (text.trim()) return JSON.parse(text);
+    } catch {
+      // fall through: hooks fail open
+    }
+  }
+  return {};
+}
+
+function strField(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
 }
 
 async function cmdHook(args: string[]) {
@@ -391,13 +402,32 @@ async function cmdHook(args: string[]) {
             },
           }),
         );
+      } else if (event === "prompt") {
+        const payload = await hookPayload(args);
+        const prompt = strField(payload.prompt) ?? strField(payload.user_prompt) ?? "";
+        if (prompt) {
+          const episodeId = strField(payload.episode_id) ?? process.env.ME0_EPISODE_ID ?? undefined;
+          const result = await engine.push(ctx, { prompt, episode_id: episodeId });
+          if (result.pushed.length > 0) {
+            const lines = result.pushed.map((p) => `- [${p.kind}] ${p.text}`).join("\n");
+            console.log(
+              JSON.stringify({
+                hookSpecificOutput: {
+                  hookEventName: "UserPromptSubmit",
+                  additionalContext: `<me0-push>\n${lines}\n</me0-push>`,
+                },
+              }),
+            );
+          }
+        }
       } else if (event === "session-end") {
-        const payload = args[1] && !args[1].startsWith("--") ? JSON.parse(args[1]) : {};
-        if (payload.episode_id) {
+        const payload = await hookPayload(args);
+        const endEpisodeId = strField(payload.episode_id);
+        if (endEpisodeId) {
           await engine.episodeEnd(ctx, {
-            episode_id: payload.episode_id,
-            summary: payload.summary,
-            success: payload.success,
+            episode_id: endEpisodeId,
+            summary: strField(payload.summary),
+            success: typeof payload.success === "boolean" ? payload.success : undefined,
           });
         }
       } else {
