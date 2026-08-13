@@ -38,7 +38,8 @@ export async function buildHermesPack(
  * (new session id, or an explicit reset) recomputes.
  *
  * Fail-open: if the pack cannot be computed (storage down), `pack()` returns
- * an empty string rather than throwing.
+ * an empty string rather than throwing. Failures are not cached, so a later
+ * call in the same session can recover once storage is back.
  */
 export class HermesSnapshotProvider {
   private snapshots = new Map<string, string>();
@@ -52,12 +53,14 @@ export class HermesSnapshotProvider {
     const cached = this.snapshots.get(sessionId);
     if (cached !== undefined) return cached;
     let content = "";
+    let ok = true;
     try {
       content = (await buildHermesPack(this.engine, this.ctx, opts)).content;
     } catch {
       content = "";
+      ok = false;
     }
-    this.snapshots.set(sessionId, content);
+    if (ok) this.snapshots.set(sessionId, content);
     return content;
   }
 

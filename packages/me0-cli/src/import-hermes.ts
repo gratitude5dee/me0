@@ -1,10 +1,10 @@
 import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EpisodeDoc, EventDoc, Me0Engine, MemoryKind, MemoryTier } from "me0-core";
 import type { OperationContext } from "me0-core";
 import type { Db } from "mongodb";
+import { hermesHome } from "./hermes.js";
 
 export interface HermesImportCounts {
   episodes: number;
@@ -210,7 +210,7 @@ export async function importHermes(
   userId: string,
   opts: { dbPath?: string; hermesHome?: string } = {},
 ): Promise<HermesImportCounts> {
-  const home = opts.hermesHome ?? join(homedir(), ".hermes");
+  const home = opts.hermesHome ?? hermesHome();
   const dbPath = opts.dbPath ?? join(home, "state.db");
   const ctx = hermesImportContext(userId);
   const counts: HermesImportCounts = { episodes: 0, events: 0, memories: 0, skipped_memories: 0 };

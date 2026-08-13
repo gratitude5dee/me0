@@ -11,12 +11,13 @@ export function detectHermes(home = hermesHome()): boolean {
 }
 
 export function me0McpYamlBlock(uri: string, userId: string): string {
+  // JSON.stringify produces a valid YAML double-quoted scalar (escapes ", \, newlines)
   return [
     "  me0:",
     '    command: "me0-mcp"',
     "    env:",
-    `      ME0_MONGODB_URI: "${uri}"`,
-    `      ME0_USER_ID: "${userId}"`,
+    `      ME0_MONGODB_URI: ${JSON.stringify(uri)}`,
+    `      ME0_USER_ID: ${JSON.stringify(userId)}`,
     '      ME0_HARNESS: "hermes"',
     "",
   ].join("\n");

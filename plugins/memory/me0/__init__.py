@@ -74,17 +74,17 @@ class Me0MemoryProvider(MemoryProvider):
 
     def initialize(self, session_id: str, **kwargs) -> None:
         self._session_id = session_id
-        if kwargs.get("agent_context") not in (None, "primary"):
-            return  # never write from cron/subagent/flush contexts
-        started = _run_op(
-            "episode_start",
-            {
-                "harness": "hermes",
-                "agent_name": kwargs.get("agent_identity") or "hermes",
-                "title": f"hermes session {session_id}",
-            },
-        )
-        self._episode_id = started.get("episode_id") if started else None
+        if kwargs.get("agent_context") in (None, "primary"):
+            # never write from cron/subagent/flush contexts
+            started = _run_op(
+                "episode_start",
+                {
+                    "harness": "hermes",
+                    "agent_name": kwargs.get("agent_identity") or "hermes",
+                    "title": f"hermes session {session_id}",
+                },
+            )
+            self._episode_id = started.get("episode_id") if started else None
         self._freeze_pack()
 
     def _freeze_pack(self) -> None:
