@@ -15,6 +15,8 @@ import {
   operations,
 } from "me0-core";
 import { configDir, loadConfig, saveConfig } from "./config.js";
+import { detectHermes, hermesHome, printHermesGuidance, wireHermesConfig } from "./hermes.js";
+import { importHermes } from "./import-hermes.js";
 import { defaultOpenClawWorkspace, importOpenClawWorkspace } from "./import-openclaw.js";
 import { openclawDir, wireOpenClaw } from "./openclaw.js";
 import { defaultPiSessionsDir, importPiSessions, wirePi } from "./pi.js";
@@ -29,6 +31,8 @@ commands:
   verify    end-to-end write → recall → pack round-trip (exit 0 = healthy)
   export    dump all memory as JSONL to stdout or --out <dir>
   import    load a me0 export (JSONL) from --in <file>
+  import-hermes  backfill from Hermes: state.db sessions + memories/*.md
+                 flags: --db <state.db path>, --home <hermes home>
   import-pi backfill pi JSONL session trees [--dir ~/.pi/agent/sessions]
   import-context  backfill CLAUDE.md/AGENTS.md/MEMORY.md/USER.md/SOUL.md into memories
   import-claude   backfill ~/.claude auto-memory + session transcripts (--dir to override)
@@ -120,6 +124,21 @@ async function cmdInit(args: string[]) {
     }
   } else {
     console.log("codex not detected (~/.codex missing) — skipped");
+  }
+
+  // Hermes wiring
+  if (detectHermes()) {
+    const status = wireHermesConfig(uri, userId);
+    if (status === "wired") {
+      console.log(`hermes wired: ${hermesHome()}/config.yaml ([mcp_servers.me0])`);
+    } else if (status === "present") {
+      console.log("hermes already wired");
+    } else {
+      console.log("hermes NOT wired — see instructions above to add the entry manually");
+    }
+    printHermesGuidance();
+  } else {
+    console.log("hermes not detected (~/.hermes missing) — skipped");
   }
 
   // pi wiring
@@ -237,6 +256,24 @@ async function cmdImport(args: string[]) {
       n++;
     }
     console.log(`imported ${n} docs`);
+  });
+}
+
+async function cmdImportHermes(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const dbPath = flag(args, "--db");
+  const home = flag(args, "--home");
+  await withEngine(uri, async (engine, db) => {
+    const counts = await importHermes(db, engine, userId, {
+      dbPath,
+      hermesHome: home,
+    });
+    console.log(
+      `import-hermes: ${counts.episodes} episodes, ${counts.events} events, ` +
+        `${counts.memories} memories added (${counts.skipped_memories} already present)`,
+    );
   });
 }
 
@@ -449,6 +486,8 @@ async function main() {
       return cmdExport(args);
     case "import":
       return cmdImport(args);
+    case "import-hermes":
+      return cmdImportHermes(args);
     case "import-pi":
       return cmdImportPi(args);
     case "import-context":

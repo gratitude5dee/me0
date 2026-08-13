@@ -1,0 +1,13 @@
+# Hermes memory-provider plugin manifest for me0 (goal.md §11).
+# The implementation lives in plugins/memory/me0/ — copy that directory into a
+# hermes-agent checkout's plugins/memory/ and run:
+#   hermes config set memory.provider me0
+# See plugins/memory/me0/README.md for setup, MCP config, and backfill.
+name: me0
+version: 0.1.0
+description: "me0 memory provider — replaces the 2,200-char MEMORY.md cap with the user's portable context graph (frozen-snapshot context pack, episodic capture)."
+hooks:
+  - sync_turn
+  - on_session_end
+  - on_session_switch
+  - on_pre_compress

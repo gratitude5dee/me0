@@ -35,6 +35,7 @@
       },
       "dependencies": {
         "me0-core": "workspace:*",
+        "mongodb": "^6.12.0",
       },
       "devDependencies": {
         "bun-types": "^1.1.0",

@@ -1,0 +1,8 @@
+name: me0
+version: 0.1.0
+description: "me0 memory provider — replaces the 2,200-char MEMORY.md cap with the user's portable context graph (frozen-snapshot context pack, episodic capture)."
+hooks:
+  - sync_turn
+  - on_session_end
+  - on_session_switch
+  - on_pre_compress

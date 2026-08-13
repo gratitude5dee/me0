@@ -59,6 +59,14 @@ me0 op handoff '{"episode_id":"ep_...","banked_state":"Fixing auth bug in api/lo
 me0 op context_pack '{"resume":"hd_..."}'
 ```
 
+## Hermes adapter (v0.2)
+
+Replace Hermes's 2,200-char `MEMORY.md` cap with your context graph:
+
+- **Memory provider** — copy [`plugins/memory/me0/`](plugins/memory/me0/) into your [hermes-agent](https://github.com/NousResearch/hermes-agent) checkout's `plugins/memory/` and run `hermes config set memory.provider me0`. It serves a frozen-snapshot context pack (stable prefix — respects Hermes's prompt caching) and captures episodes (`episode_start/log/end`) fail-open. See [`plugins/memory/me0/README.md`](plugins/memory/me0/README.md).
+- **MCP verbs** — `me0 init` detects `~/.hermes/` and adds an `mcp_servers.me0` entry to `~/.hermes/config.yaml` so Hermes can call the verbs directly.
+- **Backfill** — `me0 import-hermes [--db ~/.hermes/state.db] [--home ~/.hermes]` imports Hermes sessions/messages from `state.db` as episodes/events and `memories/MEMORY.md` / `USER.md` / `SOUL.md` as typed memories. Deterministic (no LLM), idempotent — safe to re-run.
+
 ## OpenClaw adapter (v0.2)
 
 A native OpenClaw plugin (`openclaw.plugin.json` + `packages/me0-openclaw`) swaps OpenClaw's file-based `memory_search`/`memory_get` for the me0 graph, exposes every me0 verb as a tool, captures sessions as episodes (fail-open `command:new`/`command:stop`/`session:compact:before` hooks bank a handoff before compaction), injects the context pack at `agent:bootstrap`, and contributes `delta` on gateway heartbeat. Configure `mongodb_uri` (plus `user_id`, optional `agent`) in the plugin config — `me0 init` detects `~/.openclaw` (or `OPENCLAW_HOME`) and writes it for you.

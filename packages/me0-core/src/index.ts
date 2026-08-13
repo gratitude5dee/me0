@@ -1,3 +1,4 @@
+export * from "./adapters/hermes.js";
 export * from "./dream.js";
 export * from "./engine.js";
 export * from "./importers/index.js";
