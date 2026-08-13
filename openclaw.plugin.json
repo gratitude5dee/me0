@@ -1,0 +1,47 @@
+{
+  "id": "me0",
+  "name": "me0",
+  "description": "The zeroth memory layer: graph-backed memory_search/memory_get, the me0 verbs, and cross-harness session capture.",
+  "version": "0.1.0",
+  "activation": {
+    "onCapabilities": ["hook", "tool"]
+  },
+  "contracts": {
+    "tools": [
+      "memory_search",
+      "memory_get",
+      "recall",
+      "remember",
+      "entity",
+      "context_pack",
+      "delta",
+      "forget",
+      "synthesize",
+      "episode_start",
+      "episode_log",
+      "episode_end",
+      "episode_recall",
+      "handoff",
+      "whoami",
+      "me0_stats"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "mongodb_uri": {
+        "type": "string",
+        "description": "MongoDB connection string for the me0 database"
+      },
+      "user_id": {
+        "type": "string",
+        "description": "me0 user id (default: me)"
+      },
+      "agent": {
+        "type": "string",
+        "description": "Agent name stamped into provenance (default: openclaw)"
+      }
+    }
+  }
+}
