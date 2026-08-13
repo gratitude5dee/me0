@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EpisodeDoc, EventDoc, Me0Engine, MemoryKind, MemoryTier } from "me0-core";
+import { parseMarkdown } from "me0-core";
 import type { OperationContext } from "me0-core";
 import type { Db } from "mongodb";
 import { hermesHome } from "./hermes.js";
@@ -74,11 +75,18 @@ export async function importHermesStateDb(
   const sqlite = new Database(dbPath, { readonly: true });
   try {
     const sessionCols = tableColumns(sqlite, "sessions");
-    const pick = (col: string) => (sessionCols.has(col) ? col : `NULL AS ${col}`);
+    const messageCols = tableColumns(sqlite, "messages");
+    if (!sessionCols.has("id") || !messageCols.has("session_id")) {
+      console.error(`unrecognized state.db schema at ${dbPath} — skipping session import`);
+      return { episodes: 0, events: 0 };
+    }
+    const pick = (cols: Set<string>) => (col: string) => (cols.has(col) ? col : `NULL AS ${col}`);
+    const sPick = pick(sessionCols);
+    const mPick = pick(messageCols);
     const sessions = sqlite
       .query(
-        `SELECT id, ${pick("source")}, ${pick("model")}, started_at, ${pick("ended_at")},
-                ${pick("title")}, ${pick("cwd")}, ${pick("git_branch")}, ${pick("git_repo_root")}
+        `SELECT id, ${sPick("source")}, ${sPick("model")}, ${sPick("started_at")}, ${sPick("ended_at")},
+                ${sPick("title")}, ${sPick("cwd")}, ${sPick("git_branch")}, ${sPick("git_repo_root")}
          FROM sessions ORDER BY started_at`,
       )
       .all() as SessionRow[];
@@ -115,7 +123,8 @@ export async function importHermesStateDb(
 
       const messages = sqlite
         .query(
-          `SELECT id, session_id, role, content, tool_name, tool_calls, timestamp
+          `SELECT ${mPick("id")}, session_id, ${mPick("role")}, ${mPick("content")},
+                  ${mPick("tool_name")}, ${mPick("tool_calls")}, ${mPick("timestamp")}
            FROM messages WHERE session_id = ? ORDER BY id`,
         )
         .all(s.id) as MessageRow[];
@@ -164,16 +173,12 @@ const MEMORY_FILES: Array<{ file: string; kind: MemoryKind; tier: MemoryTier }> 
   { file: "SOUL.md", kind: "procedure", tier: "standing" },
 ];
 
-function parseMarkdownLines(text: string): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.replace(/^\s*(?:[-*+]|\d+\.)\s+/, "").trim())
-    .filter((line) => line.length > 2 && !line.startsWith("#") && !/^[-=*_]{3,}$/.test(line));
-}
-
 /**
  * Import Hermes's markdown memory files (MEMORY.md / USER.md / SOUL.md) as
- * typed me0 memories. Idempotent via remember's exact-text dedupe (NOOP).
+ * typed me0 memories, using the shared fence-aware deterministic parser
+ * (code blocks, tables, and blockquotes are skipped). The per-file kind/tier
+ * mapping is fixed; the parser's kind heuristic is intentionally ignored.
+ * Idempotent via remember's exact-text dedupe (NOOP).
  */
 export async function importHermesMemoryFiles(
   engine: Me0Engine,
@@ -185,8 +190,10 @@ export async function importHermesMemoryFiles(
   for (const { file, kind, tier } of MEMORY_FILES) {
     const path = join(memoriesDir, file);
     if (!existsSync(path)) continue;
-    for (const line of parseMarkdownLines(readFileSync(path, "utf-8"))) {
-      const r = (await engine.remember(ctx, { text: line, kind, tier })) as { action: string };
+    for (const item of parseMarkdown(readFileSync(path, "utf-8"))) {
+      const r = (await engine.remember(ctx, { text: item.text, kind, tier })) as {
+        action: string;
+      };
       if (r.action === "ADD") added++;
       else skipped++;
     }

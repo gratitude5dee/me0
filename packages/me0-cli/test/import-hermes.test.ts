@@ -55,7 +55,7 @@ function buildFixture(home: string) {
 
   writeFileSync(
     join(home, "memories", "MEMORY.md"),
-    "# Memory\n\n- Prefers TypeScript over Python\n- Works on the me0 project\n",
+    "# Memory\n\n- Prefers TypeScript over Python\n- Works on the me0 project\n\n```bash\nrm -rf /tmp/junk\n```\n\n| a | b |\n",
   );
   writeFileSync(join(home, "memories", "USER.md"), "Name: Ada\n\n---\n");
   writeFileSync(
@@ -111,6 +111,10 @@ describe("import-hermes", () => {
       .toArray();
     const texts = mems.map((m) => m.text);
     expect(texts).toContain("Prefers TypeScript over Python");
+    // fenced code blocks and table rows are skipped
+    expect(texts.some((t) => t.includes("rm -rf") || t.includes("```") || t.startsWith("|"))).toBe(
+      false,
+    );
     expect(texts).toContain("Name: Ada");
     expect(texts).toContain("Always run tests before pushing");
     for (const m of mems) {
@@ -162,6 +166,26 @@ describe("hermes config wiring", () => {
     }
   });
 
+  test("tolerates a messages table with missing optional columns", async () => {
+    const home = mkdtempSync(join(tmpdir(), "hermes-mincols-"));
+    try {
+      mkdirSync(join(home, "memories"), { recursive: true });
+      const sqlite = new Database(join(home, "state.db"));
+      sqlite.run("CREATE TABLE sessions (id TEXT PRIMARY KEY, started_at REAL)");
+      sqlite.run(
+        "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT)",
+      );
+      sqlite.run("INSERT INTO sessions VALUES ('s1', 1755000000)");
+      sqlite.run("INSERT INTO messages VALUES (1, 's1', 'user', 'hi there')");
+      sqlite.close();
+      const counts = await importHermes(db, engine, "mincols-user", { hermesHome: home });
+      expect(counts.episodes).toBe(1);
+      expect(counts.events).toBe(1);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test("inserts under an existing mcp_servers key", () => {
     const home = mkdtempSync(join(tmpdir(), "hermes-config2-"));
     try {
@@ -174,6 +198,35 @@ describe("hermes config wiring", () => {
       expect(written.indexOf("me0:")).toBeGreaterThan(written.indexOf("mcp_servers:"));
       expect(written).toContain("  other:");
       expect(written.match(/^\s{2}me0:/gm)?.length).toBe(1);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("matches the indentation of existing children", () => {
+    const home = mkdtempSync(join(tmpdir(), "hermes-config4-"));
+    try {
+      writeFileSync(
+        join(home, "config.yaml"),
+        'mcp_servers:\n    other:\n        command: "other-mcp"\n',
+      );
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe(true);
+      const written = readFileSync(join(home, "config.yaml"), "utf-8");
+      expect(written).toContain("\n    me0:\n");
+      expect(written).toContain('\n        command: "me0-mcp"\n');
+      expect(written).toContain("\n    other:\n");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("bails out on flow-style mcp_servers without corrupting the file", () => {
+    const home = mkdtempSync(join(tmpdir(), "hermes-config5-"));
+    try {
+      const original = 'mcp_servers: {other: {command: "other-mcp"}}\n';
+      writeFileSync(join(home, "config.yaml"), original);
+      expect(wireHermesConfig("mongodb://127.0.0.1:27017", "me", home)).toBe(false);
+      expect(readFileSync(join(home, "config.yaml"), "utf-8")).toBe(original);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
