@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "mongodb";
 import { type DreamReport, dream } from "./dream.js";
+import { maybeEmbedText } from "./embeddings.js";
 import { type PushResult, push } from "./push.js";
 import { hybridRecall } from "./retrieval.js";
 import type {
@@ -205,6 +206,11 @@ export class Me0Engine {
       deleted_at: null,
       prov: this.prov(ctx, ctx.agent === "user" ? "user" : "deterministic", args.confidence ?? 1),
     };
+    const emb = await maybeEmbedText(doc.text);
+    if (emb) {
+      doc.embedding = emb.embedding;
+      doc.embedding_model = emb.embedding_model;
+    }
     await memories.insertOne(doc);
     await this.audit(ctx, "remember", doc.memory_id, `+${args.kind}: ${args.text.slice(0, 80)}`);
     return {

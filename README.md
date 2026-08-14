@@ -124,13 +124,43 @@ me0 doesn't sit *next to* a database — the memory semantics are built out of M
 
 | Coming | MongoDB feature |
 |---|---|
-| Semantic recall arm | `$vectorSearch` + Voyage **automated embedding** (define the index, embeddings happen on insert *and* query) |
-| Native fusion | `$rankFusion` (8.1+) replacing app-level RRF, `scoreDetails` as evidence |
-| Multi-hop graph recall | `$graphLookup` over `edges` (seed with search, expand relationally) |
+| ~~Semantic recall arm~~ **shipped** | `$vectorSearch` + Voyage automated embeddings — see [Mongo-native retrieval](#-mongo-native-retrieval-vectorsearch-rankfusion-graphlookup) |
+| ~~Native fusion~~ **shipped** | `$rankFusion` (8.1+) replacing app-level RRF, `scoreDetails` as evidence |
+| ~~Multi-hop graph recall~~ **shipped** | `$graphLookup` over `edges` (seed with search, expand relationally) |
 | Working-memory decay | TTL indexes on raw `events` and `predictions` |
 | High-volume session logs | Time-series collections for `events` |
 | Live consolidation | Change streams triggering dream steps on write |
 | Sealed memories | Queryable Encryption for a never-shared tier |
+
+## 🧲 Mongo-native retrieval: $vectorSearch, $rankFusion, $graphLookup
+
+Hybrid recall now has five arms — text, keyword, entity/alias, **graph**, and (when embeddings are configured) **vector** — and every Mongo-native capability is optional and fail-open: the floor is still a plain local `mongo:8` container with zero API keys.
+
+**Voyage automated embeddings.** Set `ME0_VOYAGE_API_KEY` (or `voyage_api_key` in `~/.me0/config.json`; model via `ME0_EMBEDDING_MODEL` / `embedding_model`, default `voyage-3-lite`) and every `remember` / context import embeds the memory text onto the doc (`embedding`, `embedding_model`). Embedding failures never block the write. Backfill older memories with:
+
+```bash
+me0 embed-backfill [--batch 32]
+```
+
+**Vector arm.** With embeddings configured, recall gains a vector arm. On Atlas, set `ME0_VECTOR_SEARCH_INDEX` (or `vector_search_index` in config) to the name of a vector index and me0 issues `$vectorSearch`; without an index it scores exact cosine in-process over a capped candidate set. Atlas index definition (dimensions must match your model — 512 for `voyage-3-lite`):
+
+```json
+{
+  "fields": [
+    { "type": "vector", "path": "embedding", "numDimensions": 512, "similarity": "cosine" },
+    { "type": "filter", "path": "user_id" },
+    { "type": "filter", "path": "visibility" },
+    { "type": "filter", "path": "deleted_at" },
+    { "type": "filter", "path": "valid_until" }
+  ]
+}
+```
+
+**Native `$rankFusion`.** On MongoDB 8.1+ (detected via `buildInfo`, or forced with `ME0_RANK_FUSION=true|false` / `rank_fusion` in config) the text/keyword/entity/vector arms are fused server-side with `$rankFusion`, recovering per-pipeline ranks from `scoreDetails` so scoring and evidence stay identical to the in-process reciprocal-rank fusion used everywhere else.
+
+**`$graphLookup` graph arm.** Query-named entities seed a bounded `$graphLookup` walk over `edges` (both directions, default 2 entity hops, `graphDepth` to tune); memories linked to neighbor entities join the fusion with `graph_hit` evidence and depth-decayed scores. Works on any MongoDB, local Docker included.
+
+`me0 doctor` reports all three capabilities (embeddings / vector search / rank fusion).
 
 ## ⚡ Quickstart (60 seconds)
 
