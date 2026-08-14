@@ -7,4 +7,5 @@ if (!file) {
   process.exit(1);
 }
 const src = readFileSync(file, "utf-8");
-if (!src.startsWith("#!")) writeFileSync(file, `#!/usr/bin/env node\n${src}`);
+const body = src.startsWith("#!") ? src.slice(src.indexOf("\n") + 1) : src;
+writeFileSync(file, `#!/usr/bin/env node\n${body}`);
