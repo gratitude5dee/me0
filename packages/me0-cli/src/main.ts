@@ -44,7 +44,8 @@ commands:
   rfm       predictive layer: export flat tables (--out <dir>, --no-redact) + write heuristic
             predictions; PQL sketches for the KumoRFM bridge documented in me0-rfm
   serve     HTTP serving layer: me0 serve --a2a [--port 4160] [--a2a-token <tok>] [--host 127.0.0.1]
-            (binds loopback by default; non-loopback --host requires a bearer token)
+            [--url <public-base-url>] (binds loopback by default; non-loopback --host requires a
+            bearer token; --url sets the endpoint advertised on the agent card)
   op        invoke any verb directly: me0 op <name> '<json-args>'
   hook      harness hook entrypoint: me0 hook <session-start|prompt|session-end> [json]
 
@@ -417,9 +418,10 @@ async function cmdServe(args: string[]) {
   const port = Number(flag(args, "--port") ?? 4160);
   const token = flag(args, "--a2a-token") ?? process.env.ME0_A2A_TOKEN;
   const hostname = flag(args, "--host") ?? "127.0.0.1";
+  const publicUrl = flag(args, "--url") ?? process.env.ME0_A2A_URL;
   const store = await connect(uri);
   await ensureCollections(store.db);
-  const server = startA2AServer(store.db, { userId, port, token, hostname });
+  const server = startA2AServer(store.db, { userId, port, token, hostname, url: publicUrl });
   console.log(
     `me0 A2A endpoint listening on ${server.url} (agent card: ${server.url}.well-known/agent-card.json)`,
   );

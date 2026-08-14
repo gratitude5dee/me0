@@ -193,6 +193,28 @@ describe("message/send", () => {
     expect(allowed.status).toBe(200);
   });
 
+  test("remote recall does not mutate access telemetry", async () => {
+    const before = await store.db
+      .collection("memories")
+      .findOne({ user_id: opts.userId, visibility: "world" });
+    const retrievalsBefore = await store.db
+      .collection("retrievals")
+      .countDocuments({ user_id: opts.userId });
+    const res = await handleA2ARequest(
+      store.db,
+      opts,
+      rpc({ message: { parts: [{ kind: "text", text: String(before?.text ?? "world") }] } }),
+    );
+    expect(res.status).toBe(200);
+    const after = await store.db
+      .collection("memories")
+      .findOne({ user_id: opts.userId, memory_id: before?.memory_id });
+    expect(after?.access?.count ?? 0).toBe(before?.access?.count ?? 0);
+    expect(await store.db.collection("retrievals").countDocuments({ user_id: opts.userId })).toBe(
+      retrievalsBefore,
+    );
+  });
+
   test("non-loopback bind without a token is refused", () => {
     expect(() => startA2AServer(store.db, { ...opts, hostname: "0.0.0.0" })).toThrow(
       /bearer token/,

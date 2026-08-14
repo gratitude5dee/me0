@@ -110,23 +110,28 @@ export class Me0Engine {
       };
     }
 
-    const ts = now();
-    await this.db.collection("retrievals").insertMany(
-      scored.map((s, i) => ({
-        ts,
-        user_id: ctx.user_id,
-        episode_id: ctx.episode_id,
-        memory_id: s.doc.memory_id,
-        surface: "recall",
-        rank: i,
-        score: s.score,
-        used: null,
-      })),
-    );
-    await memories.updateMany(
-      { user_id: ctx.user_id, memory_id: { $in: scored.map((s) => s.doc.memory_id) } },
-      { $inc: { "access.count": 1 }, $set: { "access.last_retrieved_at": ts } },
-    );
+    // remote callers must not shape the owner's telemetry: access counts and
+    // retrieval rows drive dream tiering, identity-card compilation, and
+    // heuristic predictions, so only local surfacings are recorded
+    if (!ctx.remote) {
+      const ts = now();
+      await this.db.collection("retrievals").insertMany(
+        scored.map((s, i) => ({
+          ts,
+          user_id: ctx.user_id,
+          episode_id: ctx.episode_id,
+          memory_id: s.doc.memory_id,
+          surface: "recall",
+          rank: i,
+          score: s.score,
+          used: null,
+        })),
+      );
+      await memories.updateMany(
+        { user_id: ctx.user_id, memory_id: { $in: scored.map((s) => s.doc.memory_id) } },
+        { $inc: { "access.count": 1 }, $set: { "access.last_retrieved_at": ts } },
+      );
+    }
 
     const results: RecallResult[] = scored.map((s) => ({
       memory_id: s.doc.memory_id,
@@ -374,7 +379,7 @@ export class Me0Engine {
 
     const content = sections.join("\n");
     const surfacedIds = standing.map((m) => m.memory_id);
-    if (surfacedIds.length > 0) {
+    if (!ctx.remote && surfacedIds.length > 0) {
       const ts = now();
       await this.db.collection("retrievals").insertMany(
         surfacedIds.map((memory_id, i) => ({

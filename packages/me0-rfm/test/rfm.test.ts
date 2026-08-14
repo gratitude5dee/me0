@@ -57,7 +57,16 @@ describe("export", () => {
     const report = await exportTables(store.db, ctx.user_id, outDir);
     const names = report.tables.map((t) => t.name).sort();
     expect(names).toEqual(
-      ["edges", "entities", "memories", "outcomes", "retrievals", "sessions", "tool_calls"].sort(),
+      [
+        "edges",
+        "entities",
+        "memories",
+        "outcomes",
+        "retrievals",
+        "sessions",
+        "tool_calls",
+        "users",
+      ].sort(),
     );
     const memories = readRows("memories");
     expect(memories.length).toBe(2);

@@ -27,6 +27,16 @@ function txt(v: unknown, redact: boolean): string | null {
  */
 export const TABLES: TableSpec[] = [
   {
+    name: "users",
+    collection: "users",
+    filter: (u) => ({ user_id: u }),
+    row: (d, r) => ({
+      user_id: d.user_id,
+      created_at: d.created_at,
+      names: r ? null : (d.names ?? null),
+    }),
+  },
+  {
     name: "memories",
     collection: "memories",
     filter: (u) => ({ user_id: u, deleted_at: null }),
