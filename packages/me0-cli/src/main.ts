@@ -16,12 +16,13 @@ import {
   invoke,
   operations,
 } from "me0-core";
-import { exportTables, runHeuristics } from "me0-rfm";
+import { exportTables, runHeuristics, runPredictions } from "me0-rfm";
 import { configDir, loadConfig, saveConfig } from "./config.js";
 import { detectHermes, hermesHome, printHermesGuidance, wireHermesConfig } from "./hermes.js";
 import { defaultOpenClawWorkspace, importOpenClawWorkspace } from "./import-openclaw.js";
 import { openclawDir, wireOpenClaw } from "./openclaw.js";
 import { defaultPiSessionsDir, importPiSessions, wirePi } from "./pi.js";
+import { cmdRfmPredict } from "./rfm-predict.js";
 
 const HELP = `me0 — the zeroth memory layer
 
@@ -45,6 +46,8 @@ commands:
             (--rfm also scores predictions: heuristic prefetch/forget/retrieval-utility)
   rfm       predictive layer: export flat tables (--out <dir>, --no-redact) + write heuristic
             predictions; PQL sketches for the KumoRFM bridge documented in me0-rfm
+  rfm predict  score predictions via a backend: --backend heuristic|kumo
+            (env: ME0_RFM_BACKEND, ME0_KUMO_API_KEY, ME0_KUMO_MCP_COMMAND)
   serve     HTTP serving layer: me0 serve --a2a [--port 4160] [--a2a-token <tok>] [--host 127.0.0.1]
             [--url <public-base-url>] (binds loopback by default; non-loopback --host requires a
             bearer token; --url sets the endpoint advertised on the agent card)
@@ -407,15 +410,18 @@ async function cmdDream(args: string[]) {
       `dream: purged ${report.purged}, deduped ${report.deduped}, promoted ${report.promoted}, demoted ${report.demoted}, identity_card ${report.identity_card_refreshed ? "refreshed" : "unchanged"}, packs refreshed ${report.packs_refreshed}`,
     );
     if (args.includes("--rfm")) {
-      const h = await runHeuristics(db, ctxFor(userId));
+      // automated invocation: fail-open — a kumo outage falls back to heuristics
+      const r = await runPredictions(db, ctxFor(userId), { invocation: "auto" });
+      const label = r.fallback ? `${r.backend}, kumo fell back` : r.backend;
       console.log(
-        `rfm (heuristic): ${h.retrieval_utility} retrieval_utility, ${h.prefetch} prefetch, ${h.forget} forget predictions`,
+        `rfm (${label}): ${r.counts.retrieval_utility} retrieval_utility, ${r.counts.prefetch} prefetch, ${r.counts.forget} forget predictions`,
       );
     }
   });
 }
 
 async function cmdRfm(args: string[]) {
+  if (args[0] === "predict") return cmdRfmPredict(args.slice(1));
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
   const userId = flag(args, "--user") ?? cfg.user_id;
