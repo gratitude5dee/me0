@@ -323,9 +323,12 @@ export class Me0Engine {
       return true;
     };
 
-    if (user.identity_card) push(`# Identity\n${user.identity_card}`);
+    // Remote callers get world-visible memories only: the identity card,
+    // handoff state, and episode titles/summaries are distilled from local
+    // work with no visibility scoping, so they never leave the machine.
+    if (!ctx.remote && user.identity_card) push(`# Identity\n${user.identity_card}`);
 
-    if (args.resume) {
+    if (args.resume && !ctx.remote) {
       const ep = await this.db
         .collection<EpisodeDoc>("episodes")
         .findOne({ user_id: ctx.user_id, "handoff.token": args.resume });
@@ -354,12 +357,14 @@ export class Me0Engine {
       for (const m of standing) push(`- [${m.kind}] ${m.text}`);
     }
 
-    const recentEpisodes = await this.db
-      .collection<EpisodeDoc>("episodes")
-      .find({ user_id: ctx.user_id, status: { $ne: "active" }, summary: { $ne: null } })
-      .sort({ started_at: -1 })
-      .limit(5)
-      .toArray();
+    const recentEpisodes = ctx.remote
+      ? []
+      : await this.db
+          .collection<EpisodeDoc>("episodes")
+          .find({ user_id: ctx.user_id, status: { $ne: "active" }, summary: { $ne: null } })
+          .sort({ started_at: -1 })
+          .limit(5)
+          .toArray();
     if (recentEpisodes.length > 0) {
       push("# Recent sessions");
       for (const ep of recentEpisodes) {

@@ -19,9 +19,10 @@ export interface HeuristicReport {
 
 const DAY_MS = 86400000;
 
-function decay(lastRetrievedAt: string | null, accessCount: number): number {
-  if (!lastRetrievedAt) return 0;
-  const days = (Date.now() - new Date(lastRetrievedAt).getTime()) / DAY_MS;
+function decay(lastRetrievedAt: string | null, validFrom: string, accessCount: number): number {
+  // never-retrieved memories decay from creation time, not from zero
+  const anchor = lastRetrievedAt ?? validFrom;
+  const days = (Date.now() - new Date(anchor).getTime()) / DAY_MS;
   // Ebbinghaus-style: strength grows with access count, decays with idle time
   return Math.exp(-days / (7 * (1 + Math.log1p(accessCount))));
 }
@@ -69,7 +70,7 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
       });
     }
     // prefetch: recency x frequency
-    const strength = decay(m.access.last_retrieved_at, m.access.count);
+    const strength = decay(m.access.last_retrieved_at, m.valid_from, m.access.count);
     if (strength > 0.05) {
       preds.push({
         subject_type: "memory",

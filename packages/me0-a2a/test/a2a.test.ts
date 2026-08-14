@@ -113,6 +113,50 @@ describe("message/send", () => {
     expect(pack._meta.budget_used).toBeLessThanOrEqual(200);
   });
 
+  test("episode summaries and identity card never leak to remote peers", async () => {
+    await store.db
+      .collection("users")
+      .updateOne(
+        { user_id: ctx.user_id },
+        { $set: { identity_card: "identity-card-local-only-notes" } },
+      );
+    await store.db.collection("episodes").insertOne({
+      episode_id: "ep_a2a_leak",
+      user_id: ctx.user_id,
+      harness: "claude-code",
+      agent: "test",
+      title: "confidential migration plan",
+      status: "handed_off",
+      started_at: new Date().toISOString(),
+      ended_at: new Date().toISOString(),
+      summary: "worked on the private api key rotation",
+      handoff: null,
+    });
+    const body = await send({
+      message: {
+        extensions: [MEMORY_PROFILE_EXTENSION_URI],
+        parts: [{ kind: "data", data: {} }],
+      },
+    });
+    const pack = body.result?.parts[0]?.data as { content: string };
+    expect(pack.content).not.toContain("confidential migration plan");
+    expect(pack.content).not.toContain("private api key rotation");
+    expect(pack.content).not.toContain("identity-card-local-only-notes");
+    expect(pack.content).toContain("dark documentation");
+  });
+
+  test("non-object json bodies get an invalid-request error, not a crash", async () => {
+    for (const raw of ["null", "42", '"hi"']) {
+      const res = await handleA2ARequest(
+        store.db,
+        opts,
+        new Request("http://localhost:4160/", { method: "POST", body: raw }),
+      );
+      const body = (await res.json()) as { error: { code: number } };
+      expect(body.error.code).toBe(-32600);
+    }
+  });
+
   test("local-only verbs are not exposed as skills", async () => {
     const body = await send({
       message: {

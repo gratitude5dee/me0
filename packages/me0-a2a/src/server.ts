@@ -88,8 +88,8 @@ export async function handleA2ARequest(
   } catch {
     return rpcError(null, -32700, "parse error");
   }
-  if (rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") {
-    return rpcError(rpc.id ?? null, -32600, "invalid request");
+  if (!rpc || typeof rpc !== "object" || rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") {
+    return rpcError(rpc?.id ?? null, -32600, "invalid request");
   }
   if (rpc.method !== "message/send") {
     return rpcError(rpc.id, -32601, `method not found: ${rpc.method}`);

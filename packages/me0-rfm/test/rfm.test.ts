@@ -91,6 +91,20 @@ describe("heuristics", () => {
     expect(r.results[0]?.text).toContain("conventional commits");
   });
 
+  test("just-created memories are not maximally forgettable", async () => {
+    await runHeuristics(store.db, ctx);
+    // "squash-merge only" was never retrieved — its forget score should decay
+    // from creation time, not default to 1.0
+    const mem = await store.db
+      .collection("memories")
+      .findOne({ user_id: ctx.user_id, text: "squash-merge only" });
+    const pred = await store.db
+      .collection("predictions")
+      .findOne({ task: "forget", subject_id: mem?.memory_id });
+    expect(pred).not.toBeNull();
+    expect(pred?.score).toBeLessThan(0.5);
+  });
+
   test("re-run replaces rather than accumulates", async () => {
     const before = await store.db.collection("predictions").countDocuments({ model: "heuristic" });
     await runHeuristics(store.db, ctx);
