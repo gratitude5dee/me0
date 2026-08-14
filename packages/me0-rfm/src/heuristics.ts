@@ -96,8 +96,9 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
     });
   }
 
-  // replace prior heuristic predictions for all of the user's memories,
-  // including deleted/superseded ones so stale scores don't accumulate
+  // replace ALL prior predictions (any model) for the user's memories,
+  // including deleted/superseded ones, so exactly one score exists per
+  // (memory, task) and retrieval ranking stays deterministic
   const allIds = await db
     .collection<MemoryDoc>("memories")
     .find({ user_id: ctx.user_id })
@@ -109,7 +110,6 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
     await col.deleteMany({
       subject_type: "memory",
       subject_id: { $in: allIds },
-      model: "heuristic",
     });
   }
   if (preds.length > 0) await col.insertMany(preds);

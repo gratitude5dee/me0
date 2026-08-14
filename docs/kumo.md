@@ -62,8 +62,12 @@ client — no Python code inside me0, and Kumo maintains the SDK half.
    binary tasks (`forget`, `retrieval_utility`) per memory (chunked ≤ 1000
    indices per call) and `prefetch` as a `LIST_DISTINCT` recommendation per
    user.
-4. Replaces any prior `model: "kumo-rfm-2"` predictions for the user's
-   memories and inserts the fresh scores.
+4. Replaces all prior predictions (any model) for the user's memories and
+   inserts the fresh scores, so exactly one score exists per (memory, task)
+   and retrieval ranking stays deterministic — the latest backend run wins.
+
+The server is spawned with a minimal environment (default safe vars plus
+`KUMO_API_KEY`), and the temporary export directory is deleted after each run.
 
 ## Fail-open policy
 

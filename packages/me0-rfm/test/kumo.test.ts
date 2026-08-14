@@ -106,11 +106,14 @@ describe("kumo backend (fake MCP server over stdio)", () => {
     expect(after).toBe(before);
   });
 
-  test("kumo predictions coexist with heuristic predictions", async () => {
+  test("each backend run replaces the other model's predictions (one score per memory)", async () => {
     await heuristicBackend.predict(store.db, ctx);
     await fakeBackend().predict(store.db, ctx);
     const models = await store.db.collection("predictions").distinct("model");
-    expect(models.sort()).toEqual(["heuristic", "kumo-rfm-2"]);
+    expect(models).toEqual(["kumo-rfm-2"]);
+    await heuristicBackend.predict(store.db, ctx);
+    const after = await store.db.collection("predictions").distinct("model");
+    expect(after).toEqual(["heuristic"]);
   });
 
   test("missing API key fails with clear guidance", async () => {
@@ -134,34 +137,25 @@ describe("runPredictions fail-open policy", () => {
       apiKey: "bad-key",
       command: process.execPath,
       args: [FAKE_SERVER],
+      env: { FAKE_KUMO_MODE: "unauthorized" },
       workDir: mkdtempSync(join(tmpdir(), "me0-kumo-bad-")),
     });
   }
 
   test("explicit invocation surfaces kumo failures with setup guidance", async () => {
-    process.env.FAKE_KUMO_MODE = "unauthorized";
-    try {
-      await expect(
-        runPredictions(store.db, ctx, { backend: unauthorizedBackend(), invocation: "explicit" }),
-      ).rejects.toThrow(/kumo backend failed/);
-    } finally {
-      process.env.FAKE_KUMO_MODE = "";
-    }
+    await expect(
+      runPredictions(store.db, ctx, { backend: unauthorizedBackend(), invocation: "explicit" }),
+    ).rejects.toThrow(/kumo backend failed/);
   });
 
   test("automated invocation falls back silently to heuristics", async () => {
-    process.env.FAKE_KUMO_MODE = "unauthorized";
-    try {
-      const report = await runPredictions(store.db, ctx, {
-        backend: unauthorizedBackend(),
-        invocation: "auto",
-      });
-      expect(report.backend).toBe("heuristic");
-      expect(report.fallback).toContain("Unauthorized");
-      expect(report.counts.forget).toBeGreaterThan(0);
-    } finally {
-      process.env.FAKE_KUMO_MODE = "";
-    }
+    const report = await runPredictions(store.db, ctx, {
+      backend: unauthorizedBackend(),
+      invocation: "auto",
+    });
+    expect(report.backend).toBe("heuristic");
+    expect(report.fallback).toContain("Unauthorized");
+    expect(report.counts.forget).toBeGreaterThan(0);
   });
 
   test("heuristic name routes to the heuristic backend", async () => {

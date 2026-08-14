@@ -1,8 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import {
+  StdioClientTransport,
+  getDefaultEnvironment,
+} from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { MemoryDoc, OperationContext } from "me0-core";
 import type { Db } from "mongodb";
 import type { PredictionBackend, PredictionReport } from "./backend.js";
@@ -23,6 +26,8 @@ export interface KumoBackendOptions {
    */
   command?: string;
   args?: string[];
+  /** Extra environment variables passed to the spawned MCP server. */
+  env?: Record<string, string>;
   /** Directory for the exported flat tables; defaults to a fresh temp dir. */
   workDir?: string;
   /** KumoRFM run mode: trades runtime for model quality. */
@@ -146,6 +151,20 @@ export class KumoBackend implements PredictionBackend {
     const args = this.opts.args ?? (envParts ? envParts.slice(1) : ["-m", "kumo_rfm_mcp.server"]);
 
     const workDir = this.opts.workDir ?? mkdtempSync(join(tmpdir(), "me0-kumo-"));
+    const selfCreatedWorkDir = this.opts.workDir === undefined;
+    try {
+      return await this.run(db, ctx, { apiKey, command, args, workDir });
+    } finally {
+      if (selfCreatedWorkDir) rmSync(workDir, { recursive: true, force: true });
+    }
+  }
+
+  private async run(
+    db: Db,
+    ctx: OperationContext,
+    cfg: { apiKey: string; command: string; args: string[]; workDir: string },
+  ): Promise<PredictionReport> {
+    const { apiKey, command, args, workDir } = cfg;
     // structure-only export: no free text ever leaves the store for the cloud model
     const exported = await exportTables(db, ctx.user_id, workDir, { redact: true });
     const csvDir = join(workDir, "rfm");
@@ -162,7 +181,9 @@ export class KumoBackend implements PredictionBackend {
     const transport = new StdioClientTransport({
       command,
       args,
-      env: { ...process.env, KUMO_API_KEY: apiKey } as Record<string, string>,
+      // minimal environment: default safe vars + the Kumo key only, so the
+      // spawned server never sees unrelated secrets from the caller's env
+      env: { ...getDefaultEnvironment(), ...this.opts.env, KUMO_API_KEY: apiKey },
       stderr: "ignore",
     });
     await client.connect(transport);
@@ -245,7 +266,9 @@ export class KumoBackend implements PredictionBackend {
         });
       }
 
-      // replace prior kumo predictions for all of the user's memories
+      // replace ALL prior predictions (any model) for the user's memories so
+      // exactly one score exists per (memory, task) and retrieval stays
+      // deterministic; latest backend run wins
       const allIds = await db
         .collection<MemoryDoc>("memories")
         .find({ user_id: ctx.user_id })
@@ -257,7 +280,6 @@ export class KumoBackend implements PredictionBackend {
         await col.deleteMany({
           subject_type: "memory",
           subject_id: { $in: allIds },
-          model: "kumo-rfm-2",
         });
       }
       if (preds.length > 0) await col.insertMany(preds);
