@@ -12,7 +12,7 @@ memory outage never blocks the agent.
 
 Install: copy this directory into hermes-agent's `plugins/memory/me0/`, then
     hermes config set memory.provider me0
-Requires the me0 CLI on PATH (`npm i -g me0`) and a
+Requires the me0 CLI on PATH (`npm i -g @8gratitude8/me0`) and a
 configured store (`me0 init`). See README.md.
 """
 

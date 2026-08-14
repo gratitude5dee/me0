@@ -7,7 +7,7 @@ description: Install, verify, and troubleshoot me0 (init / doctor / verify runbo
 
 ## Install
 ```bash
-npm i -g me0 me0-mcp   # or from the repo: bun install && bun link me0 me0-mcp
+npm i -g @8gratitude8/me0 me0-mcp   # or from the repo: bun install && bun link me0 me0-mcp
 # storage: any MongoDB. Fastest local option:
 docker run -d --name me0-mongo -p 27017:27017 mongo:8
 me0 init --uri mongodb://127.0.0.1:27017 --user <user_id> --name "<Display Name>"
