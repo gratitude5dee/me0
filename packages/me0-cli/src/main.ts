@@ -52,7 +52,7 @@ commands:
   rfm       predictive layer: export flat tables (--out <dir>, --no-redact) + write heuristic
             predictions; PQL sketches for the KumoRFM bridge documented in me0-rfm
   serve     HTTP serving layer: me0 serve --a2a [--port 4160] [--a2a-token <tok>] [--host 127.0.0.1]
-            OAuth 2.1: [--oauth-issuer <url> --oauth-audience <aud> [--oauth-jwks <url>] [--auth-mode token|oauth|either]]
+            OAuth 2.1: [--oauth-issuer <url> --oauth-audience <aud> [--oauth-jwks <url>] [--oauth-token-url <url>] [--auth-mode token|oauth|either]]
             [--url <public-base-url>] (binds loopback by default; non-loopback --host requires a
             bearer token; --url sets the endpoint advertised on the agent card)
   op        invoke any verb directly: me0 op <name> '<json-args>'
@@ -503,6 +503,7 @@ async function cmdServe(args: string[]) {
   const oauthIssuer = flag(args, "--oauth-issuer") ?? process.env.ME0_A2A_OAUTH_ISSUER;
   const oauthAudience = flag(args, "--oauth-audience") ?? process.env.ME0_A2A_OAUTH_AUDIENCE;
   const oauthJwks = flag(args, "--oauth-jwks") ?? process.env.ME0_A2A_OAUTH_JWKS;
+  const oauthTokenUrl = flag(args, "--oauth-token-url") ?? process.env.ME0_A2A_OAUTH_TOKEN_URL;
   const authModeFlag = flag(args, "--auth-mode") ?? process.env.ME0_A2A_AUTH_MODE;
   if ((oauthIssuer && !oauthAudience) || (!oauthIssuer && oauthAudience)) {
     console.error("OAuth requires both --oauth-issuer and --oauth-audience");
@@ -514,7 +515,12 @@ async function cmdServe(args: string[]) {
   }
   const oauth =
     oauthIssuer && oauthAudience
-      ? { issuer: oauthIssuer, audience: oauthAudience, jwksUri: oauthJwks }
+      ? {
+          issuer: oauthIssuer,
+          audience: oauthAudience,
+          jwksUri: oauthJwks,
+          tokenUrl: oauthTokenUrl,
+        }
       : undefined;
   const authMode = authModeFlag as "token" | "oauth" | "either" | undefined;
   const store = await connect(uri);

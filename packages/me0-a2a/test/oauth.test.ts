@@ -60,7 +60,11 @@ async function mint(o: MintOptions = {}): Promise<string> {
   return jwt.sign(pair.privateKey);
 }
 
-function freshOpts(overrides: Partial<A2AServerOptions> = {}): A2AServerOptions {
+type FreshOverrides = Partial<Omit<A2AServerOptions, "oauth">> & {
+  oauth?: Partial<A2AOAuthOptions>;
+};
+
+function freshOpts(overrides: FreshOverrides = {}): A2AServerOptions {
   // fresh oauth object per call → fresh verifier + JWKS cache
   const oauth: A2AOAuthOptions = {
     issuer: ISSUER,
@@ -107,8 +111,19 @@ beforeAll(async () => {
     fetch: (req) => {
       const path = new URL(req.url).pathname;
       if (path === "/jwks") return Response.json({ keys: servedKeys });
+      const origin = new URL(req.url).origin;
       if (path === "/.well-known/oauth-authorization-server") {
-        return Response.json({ issuer: ISSUER, jwks_uri: jwksUri });
+        return Response.json({
+          issuer: origin,
+          jwks_uri: jwksUri,
+          token_endpoint: `${origin}/oauth/token`,
+        });
+      }
+      if (path === "/mismatch/.well-known/oauth-authorization-server") {
+        return Response.json({ issuer: "https://someone-else.test", jwks_uri: jwksUri });
+      }
+      if (path === "/insecure/.well-known/oauth-authorization-server") {
+        return Response.json({ issuer: `${origin}/insecure`, jwks_uri: "http://evil.test/jwks" });
       }
       return new Response("not found", { status: 404 });
     },
@@ -245,6 +260,38 @@ describe("a2a oauth", () => {
     expect(ok.status).toBe(200);
   });
 
+  test("bearer scheme is case-insensitive for JWTs", async () => {
+    const token = await mint({ scope: "me0.recall" });
+    const req = new Request("http://localhost:4160/", {
+      method: "POST",
+      headers: { authorization: `BEARER ${token}` },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "message/send",
+        params: { message: { parts: [{ kind: "text", text: "themes" }] } },
+      }),
+    });
+    const res = await handleA2ARequest(store.db, freshOpts(), req);
+    expect(res.status).toBe(200);
+  });
+
+  test("bearer scheme is case-insensitive for the static token", async () => {
+    const opts = freshOpts({ token: "sekrit", authMode: "token" });
+    const req = new Request("http://localhost:4160/", {
+      method: "POST",
+      headers: { authorization: "bearer sekrit" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "message/send",
+        params: { message: { parts: [{ kind: "text", text: "themes" }] } },
+      }),
+    });
+    const res = await handleA2ARequest(store.db, opts, req);
+    expect(res.status).toBe(200);
+  });
+
   test("jwks discovery via well-known metadata works", async () => {
     const opts = freshOpts();
     if (opts.oauth) {
@@ -259,10 +306,84 @@ describe("a2a oauth", () => {
     expect(res.status).toBe(200);
   });
 
+  test("discovery rejects metadata whose issuer does not match", async () => {
+    const issuer = `http://127.0.0.1:${jwksServer.port}/mismatch`;
+    const opts = freshOpts();
+    if (opts.oauth) {
+      opts.oauth.issuer = issuer;
+      opts.oauth.jwksUri = undefined;
+    }
+    const token = await mint({ scope: "me0.recall", iss: issuer });
+    const res = await handleA2ARequest(store.db, opts, rpc(token));
+    expect(res.status).toBe(401);
+  });
+
+  test("discovery rejects a non-https jwks_uri on a non-loopback host", async () => {
+    const issuer = `http://127.0.0.1:${jwksServer.port}/insecure`;
+    const opts = freshOpts();
+    if (opts.oauth) {
+      opts.oauth.issuer = issuer;
+      opts.oauth.jwksUri = undefined;
+    }
+    const token = await mint({ scope: "me0.recall", iss: issuer });
+    const res = await handleA2ARequest(store.db, opts, rpc(token));
+    expect(res.status).toBe(401);
+  });
+
+  test("non-https issuer on a non-loopback host is rejected outright", async () => {
+    const opts = freshOpts();
+    if (opts.oauth) {
+      opts.oauth.issuer = "http://evil.test";
+      opts.oauth.jwksUri = undefined;
+    }
+    const token = await mint({ scope: "me0.recall", iss: "http://evil.test" });
+    const res = await handleA2ARequest(store.db, opts, rpc(token));
+    expect(res.status).toBe(401);
+  });
+
+  test("agent card uses the discovered token_endpoint", async () => {
+    const issuer = `http://127.0.0.1:${jwksServer.port}`;
+    const opts = freshOpts();
+    if (opts.oauth) {
+      opts.oauth.issuer = issuer;
+      opts.oauth.jwksUri = undefined;
+    }
+    const res = await handleA2ARequest(
+      store.db,
+      opts,
+      new Request("http://localhost:4160/.well-known/agent-card.json"),
+    );
+    const card = (await res.json()) as {
+      securitySchemes: { oauth2?: { flows?: { clientCredentials?: { tokenUrl?: string } } } };
+    };
+    expect(card.securitySchemes.oauth2?.flows?.clientCredentials?.tokenUrl).toBe(
+      `${issuer}/oauth/token`,
+    );
+  });
+
+  test("agent card omits the token flow when no endpoint is known", async () => {
+    const issuer = `http://127.0.0.1:${jwksServer.port}/nometa`;
+    const opts = freshOpts();
+    if (opts.oauth) {
+      opts.oauth.issuer = issuer;
+      opts.oauth.jwksUri = undefined;
+    }
+    const res = await handleA2ARequest(
+      store.db,
+      opts,
+      new Request("http://localhost:4160/.well-known/agent-card.json"),
+    );
+    const card = (await res.json()) as {
+      securitySchemes: { oauth2?: { type: string; flows?: Record<string, unknown> } };
+    };
+    expect(card.securitySchemes.oauth2?.type).toBe("oauth2");
+    expect(card.securitySchemes.oauth2?.flows).toEqual({});
+  });
+
   test("agent card advertises the oauth2 scheme alongside the static token", async () => {
     const res = await handleA2ARequest(
       store.db,
-      freshOpts({ token: "sekrit" }),
+      freshOpts({ token: "sekrit", oauth: { tokenUrl: `${ISSUER}/oauth/token` } }),
       new Request("http://localhost:4160/.well-known/agent-card.json"),
     );
     const card = (await res.json()) as {
