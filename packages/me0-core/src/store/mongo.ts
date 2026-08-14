@@ -1,5 +1,6 @@
-import { type Db, MongoClient } from "mongodb";
+import { type Collection, type Db, type Document, MongoClient } from "mongodb";
 import { validators } from "../schema/validators.js";
+import { RETRIEVALS_TIMESERIES_OPTIONS, telemetryCollectionType } from "./telemetry.js";
 
 export const DB_NAME = "me0";
 
@@ -19,6 +20,10 @@ export async function connect(uri: string): Promise<Store> {
 export async function ensureCollections(db: Db): Promise<void> {
   const existing = new Set((await db.listCollections().toArray()).map((c) => c.name));
   for (const [name, validator] of Object.entries(validators)) {
+    if (name === "retrievals") {
+      await ensureRetrievalsCollection(db, existing.has(name), validator);
+      continue;
+    }
     if (!existing.has(name)) {
       await db.createCollection(name, { validator, validationLevel: "moderate" });
     } else {
@@ -26,6 +31,69 @@ export async function ensureCollections(db: Db): Promise<void> {
     }
   }
   await ensureIndexes(db);
+}
+
+/**
+ * Retrieval telemetry is created as a native time-series collection on fresh
+ * databases. An existing plain collection is kept as-is (no destructive
+ * migration of user data) — `me0 doctor` reports the upgrade path. Validators
+ * are not supported on time-series collections, so the JSON-schema validator
+ * only applies to the plain shape.
+ */
+async function ensureRetrievalsCollection(
+  db: Db,
+  exists: boolean,
+  validator: Document,
+): Promise<void> {
+  if (!exists) {
+    try {
+      await db.createCollection("retrievals", RETRIEVALS_TIMESERIES_OPTIONS);
+      return;
+    } catch {
+      // server without time-series support: fall back to a plain collection
+      await db.createCollection("retrievals", { validator, validationLevel: "moderate" });
+      return;
+    }
+  }
+  if ((await telemetryCollectionType(db)) === "standard") {
+    await db.command({ collMod: "retrievals", validator, validationLevel: "moderate" });
+  }
+}
+
+/** 72h window between a soft-delete (forget) and the native TTL hard purge. */
+export const PURGE_WINDOW_MS = 72 * 3600 * 1000;
+
+/** 30d expiry for heuristic rfm predictions (longest horizon is 90d, scores are recomputed on every dream/rfm run). */
+export const PREDICTION_TTL_MS = 30 * 86400000;
+
+/** TTL indexes owned by me0 (safe to drop/recreate on option conflicts). */
+export const TTL_INDEXES = [
+  { collection: "memories", key: { purge_at: 1 }, name: "ttl_purge_at" },
+  { collection: "predictions", key: { expire_at: 1 }, name: "ttl_expire_at" },
+] as const;
+
+/**
+ * Idempotent TTL index creation: creating an index that already exists with
+ * the same options is a no-op; on an option conflict only our known index
+ * name is dropped and recreated.
+ */
+async function ensureTtlIndex(
+  col: Collection<Document>,
+  key: Document,
+  name: string,
+): Promise<void> {
+  try {
+    await col.createIndex(key, { name, expireAfterSeconds: 0 });
+  } catch (err) {
+    const code = (err as { code?: number }).code;
+    // 85 IndexOptionsConflict, 86 IndexKeySpecsConflict
+    if (code === 85 || code === 86) {
+      await col.dropIndex(name);
+      await col.createIndex(key, { name, expireAfterSeconds: 0 });
+    } else {
+      throw err;
+    }
+  }
 }
 
 async function ensureIndexes(db: Db): Promise<void> {
@@ -42,9 +110,16 @@ async function ensureIndexes(db: Db): Promise<void> {
   await db.collection("episodes").createIndex({ user_id: 1, episode_id: 1 }, { unique: true });
   await db.collection("episodes").createIndex({ user_id: 1, started_at: -1 });
   await db.collection("events").createIndex({ episode_id: 1, ts: 1 });
-  await db.collection("retrievals").createIndex({ user_id: 1, ts: -1 });
+  try {
+    await db.collection("retrievals").createIndex({ user_id: 1, ts: -1 });
+  } catch {
+    // older servers restrict secondary indexes on time-series collections
+  }
   await db.collection("session_state").createIndex({ user_id: 1, episode_id: 1 }, { unique: true });
   await db.collection("audit").createIndex({ ts: -1 });
+  for (const idx of TTL_INDEXES) {
+    await ensureTtlIndex(db.collection(idx.collection), idx.key, idx.name);
+  }
 }
 
 /**

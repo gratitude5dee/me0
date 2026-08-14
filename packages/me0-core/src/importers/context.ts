@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Db } from "mongodb";
+import { maybeEmbedText } from "../embeddings.js";
 import type { Me0Engine } from "../engine.js";
 import type { MemoryDoc, MemoryKind, OperationContext } from "../types.js";
 import { parseMarkdown, slugify } from "./markdown.js";
@@ -129,6 +130,11 @@ export async function importContextFile(
       },
       source: { file, heading_path: item.heading_path },
     };
+    const emb = await maybeEmbedText(doc.text);
+    if (emb) {
+      doc.embedding = emb.embedding;
+      doc.embedding_model = emb.embedding_model;
+    }
     await memories.insertOne(doc);
     result.added++;
     result.kinds[item.kind] = (result.kinds[item.kind] ?? 0) + 1;

@@ -16,6 +16,7 @@
       "name": "me0-a2a",
       "version": "0.1.0",
       "dependencies": {
+        "jose": "6.2.8",
         "me0-core": "workspace:*",
         "mongodb": "^6.12.0",
       },
@@ -97,6 +98,7 @@
       "name": "me0-rfm",
       "version": "0.1.0",
       "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.12.0",
         "me0-core": "workspace:*",
         "mongodb": "^6.12.0",
       },
