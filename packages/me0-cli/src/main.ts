@@ -18,6 +18,7 @@ import {
 } from "me0-core";
 import { exportTables, runHeuristics } from "me0-rfm";
 import { configDir, loadConfig, saveConfig } from "./config.js";
+import { dreamExtractStep, maybeExtractOnEpisodeEnd, runExtractCommand } from "./extract.js";
 import { detectHermes, hermesHome, printHermesGuidance, wireHermesConfig } from "./hermes.js";
 import { defaultOpenClawWorkspace, importOpenClawWorkspace } from "./import-openclaw.js";
 import { openclawDir, wireOpenClaw } from "./openclaw.js";
@@ -42,7 +43,11 @@ commands:
   import-devin    backfill a Devin session export (JSON) as an episode: --in <file>
                   (export shape: { session_id, title, events: [...] } from the Devin session-events API)
   dream     consolidation pass: purge, dedupe, decay tiers, recompile cards, refresh packs
-            (--rfm also scores predictions: heuristic prefetch/forget/retrieval-utility)
+            (--rfm also scores predictions: heuristic prefetch/forget/retrieval-utility;
+            also LLM-extracts recently-ended unextracted episodes when an LLM is configured)
+  extract   LLM session-end extraction: distill durable memories from an episode's event log
+            (prov.method "llm"): me0 extract --episode <id> | me0 extract --all
+            config: ME0_LLM_BASE_URL, ME0_LLM_MODEL, ME0_LLM_API_KEY (or llm_* in config.json)
   rfm       predictive layer: export flat tables (--out <dir>, --no-redact) + write heuristic
             predictions; PQL sketches for the KumoRFM bridge documented in me0-rfm
   serve     HTTP serving layer: me0 serve --a2a [--port 4160] [--a2a-token <tok>] [--host 127.0.0.1]
@@ -403,6 +408,7 @@ async function cmdDream(args: string[]) {
   const userId = flag(args, "--user") ?? cfg.user_id;
   await withEngine(uri, async (engine, db) => {
     const report = await engine.dream(ctxFor(userId));
+    await dreamExtractStep(db, ctxFor(userId));
     console.log(
       `dream: purged ${report.purged}, deduped ${report.deduped}, promoted ${report.promoted}, demoted ${report.demoted}, identity_card ${report.identity_card_refreshed ? "refreshed" : "unchanged"}, packs refreshed ${report.packs_refreshed}`,
     );
@@ -474,9 +480,29 @@ async function cmdOp(args: string[]) {
     process.exit(1);
   }
   const jsonArg = args[1] && !args[1].startsWith("--") ? args[1] : "{}";
-  await withEngine(uri, async (engine) => {
-    const result = await invoke(engine, ctxFor(userId), name, JSON.parse(jsonArg));
+  await withEngine(uri, async (engine, db) => {
+    const ctx = ctxFor(userId);
+    const parsedArgs = JSON.parse(jsonArg);
+    const result = await invoke(engine, ctx, name, parsedArgs);
     console.log(JSON.stringify(result, null, 2));
+    if (name === "episode_end") {
+      const epId =
+        typeof parsedArgs.episode_id === "string" ? parsedArgs.episode_id : ctx.episode_id;
+      if (epId) await maybeExtractOnEpisodeEnd(db, ctx, epId);
+    }
+  });
+}
+
+async function cmdExtract(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const episodeId = flag(args, "--episode");
+  await withEngine(uri, async (_engine, db) => {
+    await runExtractCommand(db, ctxFor(userId), {
+      episode_id: episodeId,
+      all: args.includes("--all"),
+    });
   });
 }
 
@@ -514,7 +540,7 @@ async function cmdHook(args: string[]) {
   const userId = flag(args, "--user") ?? cfg.user_id;
   const event = args[0];
   try {
-    await withEngine(uri, async (engine) => {
+    await withEngine(uri, async (engine, db) => {
       const ctx = ctxFor(userId);
       ctx.harness = "claude-code";
       ctx.agent = "claude-code";
@@ -560,6 +586,7 @@ async function cmdHook(args: string[]) {
             summary: strField(payload.summary),
             success: typeof payload.success === "boolean" ? payload.success : undefined,
           });
+          await maybeExtractOnEpisodeEnd(db, ctx, endEpisodeId);
         }
       } else {
         throw new Error(`unknown hook event: ${event}`);
@@ -599,6 +626,8 @@ async function main() {
       return cmdImportDevin(args);
     case "dream":
       return cmdDream(args);
+    case "extract":
+      return cmdExtract(args);
     case "rfm":
       return cmdRfm(args);
     case "serve":

@@ -221,6 +221,24 @@ Using Devin? See [docs/devin.md](docs/devin.md) for wiring me0 into Devin's envi
 
 Headings become concept entities; `prefer/always/never` → preference, `decided` → decision, imperative how-tos → procedure, else fact. Everything lands with `method: "deterministic"` provenance and normalized-text dedupe — re-import never duplicates.
 
+## 🧪 LLM session-end extraction (`prov.method: "llm"`)
+
+When an episode ends, an LLM can distill the event log into durable memories (facts, preferences, decisions, project state) written with `prov: { method: "llm", confidence, episode_id, harness }`, default visibility `private`. Works with any OpenAI-compatible chat-completions endpoint (OpenAI, OpenRouter, local llama.cpp/ollama):
+
+```bash
+export ME0_LLM_BASE_URL=https://openrouter.ai/api/v1   # or http://127.0.0.1:11434/v1
+export ME0_LLM_MODEL=openai/gpt-4o-mini
+export ME0_LLM_API_KEY=sk-...                          # optional for local endpoints
+
+me0 extract --episode ep_abc123   # explicit one-episode extraction
+me0 extract --all                 # sweep recently-ended unextracted episodes
+me0 dream                         # dream cycle runs the same sweep when an LLM is configured
+```
+
+Config keys (env overrides `~/.me0/config.json`): `ME0_LLM_BASE_URL`/`llm_base_url`, `ME0_LLM_MODEL`/`llm_model`, `ME0_LLM_API_KEY`/`llm_api_key`, `ME0_EXTRACT_ON_EPISODE_END`/`extract_on_episode_end` (auto-extract after `episode_end` via `me0 op`/`me0 hook session-end`), `ME0_EXTRACT_MIN_CONFIDENCE`/`extract_min_confidence` (default 0.5).
+
+Guarantees: **fail-open** — an LLM outage never blocks `episode_end` (errors go to stderr, the episode still ends); **honest abstention** — the model is instructed to output strict JSON and an empty array when nothing durable happened, malformed output is dropped, never retried into fabrication; **idempotent** — normalized-text dedupe (`create_safety=exists` semantics) makes re-extraction safe, and processed episodes are flagged `extracted_at` so sweeps don't re-run them; **clamped** — confidence clamped to [0,1], items below the threshold skipped, at most 12 items per episode, suggested tiers capped below `core`.
+
 ## 📊 me0-bench: falsifiable memory
 
 A memory layer that can't be scored is a vibe. `me0-bench` runs a synthetic persona through the full pipeline — hermetically in CI (`bun test`, `mongodb-memory-server`) or against a live deployment (`me0-bench`, exit-code gated):

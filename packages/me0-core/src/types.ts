@@ -98,6 +98,8 @@ export interface EpisodeDoc {
   outcome: { success: boolean | null; artifacts: string[]; commits: string[] };
   handoff: { token: string; banked_state: string; minted_at: string } | null;
   tags: string[];
+  /** set once session-end LLM extraction has processed this episode */
+  extracted_at?: string;
 }
 
 export interface EventDoc {
