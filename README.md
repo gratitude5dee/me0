@@ -137,7 +137,8 @@ me0 doesn't sit *next to* a database — the memory semantics are built out of M
 ```bash
 git clone https://github.com/gratitude5dee/me0 && cd me0
 bun install
-bun link me0-cli && bun link me0-mcp
+(cd packages/me0-cli && bun link) && (cd packages/me0-mcp && bun link)   # register the binaries
+bun link me0-cli && bun link me0-mcp                                     # put `me0` + `me0-mcp` on PATH
 
 # storage: any MongoDB — local Docker is the free floor
 docker run -d --name me0-mongo -p 27017:27017 mongo:8

@@ -266,7 +266,13 @@ export async function invoke(
   const op = getOperation(name);
   if (!op) throw new Error(`unknown operation: ${name}`);
   if (op.localOnly && ctx.remote) throw new Error(`${name} is local-only`);
-  const err = validateArgs(op, args);
+  // episode_id defaults from the operation context (e.g. ME0_EPISODE_ID),
+  // so hook-driven callers don't have to thread it into every arg payload
+  const finalArgs =
+    "episode_id" in (op.inputSchema.properties ?? {}) && args.episode_id == null && ctx.episode_id
+      ? { ...args, episode_id: ctx.episode_id }
+      : args;
+  const err = validateArgs(op, finalArgs);
   if (err) throw new Error(err);
-  return op.handler(engine, ctx, args);
+  return op.handler(engine, ctx, finalArgs);
 }

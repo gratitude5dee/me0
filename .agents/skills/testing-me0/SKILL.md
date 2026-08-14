@@ -17,6 +17,10 @@ description: How to run and end-to-end test the me0 memory layer (CLI, MCP serve
 - Handoff flow: `episode_start` → `handoff {"episode_id","banked_state"}` returns `token` → `context_pack {"resume":"<token>"}` includes the banked state.
 - Export/import: `me0 export --out <dir>` writes one JSONL per collection; `me0 import --in <file.jsonl>` (lines carry `_collection`).
 
+## Context ingestion (v0.2+)
+- `me0 import-context [paths...]` — no paths = walk-up discovery of CLAUDE.md/AGENTS.md/MEMORY.md/USER.md/SOUL.md from cwd plus ~, ~/.claude, ~/.codex. Kind heuristics: "prefer/always/never" → preference, "decided/we chose" → decision, leading imperative verb → procedure, else fact. Idempotent (dedupe on normalized text). Imported memories get confidence 0.6 — below the 0.7 push gate, so they never surface via `me0 hook prompt`.
+- `me0 import-claude --dir <dir>` — expects `<dir>/projects/<proj>/` with `*.md` (→ memories) and `*.jsonl` transcripts (→ episode `ep_claude_<sha256(sessionId)[:12]>` + prompt/response/tool_call events). Re-import is NOOP.
+
 ## MCP server (stdio JSON-RPC)
 - Launch: `ME0_MONGODB_URI=... ME0_USER_ID=... bun packages/me0-mcp/src/server.ts`.
 - Pipe newline-delimited JSON-RPC: initialize → notifications/initialized → tools/list → tools/call. Note: the server does NOT exit when stdin closes — run it backgrounded/kill it, don't wait for the pipeline to finish.
@@ -33,3 +37,8 @@ description: How to run and end-to-end test the me0 memory layer (CLI, MCP serve
 
 ## Hooks
 - `me0 hook session-start` prints Claude Code `hookSpecificOutput` JSON; with Mongo down it must still exit 0 (fail-open, error on stderr). Restart mongo (`docker start me0-mongo`) afterwards.
+- `me0 hook prompt '{"prompt":"...","episode_id":"ep_..."}'` emits UserPromptSubmit `<me0-push>` JSON only when a matching memory clears the 0.7 confidence gate (seed one via `me0 op remember` first); `me0 hook session-end '{"episode_id":...,"summary":...,"success":true}'` ends the episode.
+- `me0 op episode_log` requires `episode_id` in the JSON args — the `ME0_EPISODE_ID` env var is NOT used as an arg default.
+
+## Gotchas
+- README quickstart's root-level `bun link me0-cli && bun link me0-mcp` fails on a fresh clone ("Package is not linked") — you must run bare `bun link` inside each package dir first. Also, root-level `bun link <name>` mutates the root package.json (adds `link:` deps) — restore with git checkout if dirtied.

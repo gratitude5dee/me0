@@ -63,6 +63,23 @@ describe("registry", () => {
   test("rejects unknown ops", async () => {
     await expect(invoke(engine, ctx, "nope", {})).rejects.toThrow("unknown operation");
   });
+
+  test("episode_id defaults from the operation context", async () => {
+    const ep = (await invoke(engine, ctx, "episode_start", { title: "ctx default" })) as {
+      episode_id: string;
+    };
+    const epCtx = { ...ctx, episode_id: ep.episode_id };
+    const logged = (await invoke(engine, epCtx, "episode_log", {
+      type: "tool_call",
+      tool: "bash",
+    })) as { ok: boolean };
+    expect(logged).toBeDefined();
+    await invoke(engine, epCtx, "episode_end", { summary: "done" });
+    // without a context episode_id it still requires the arg
+    await expect(invoke(engine, ctx, "episode_log", { type: "tool_call" })).rejects.toThrow(
+      "missing required argument: episode_id",
+    );
+  });
 });
 
 describe("remember + recall", () => {

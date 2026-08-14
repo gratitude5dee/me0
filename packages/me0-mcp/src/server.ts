@@ -58,6 +58,12 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  // exit when the client disconnects or closes stdin so one-shot clients don't leak processes
+  const shutdown = () => {
+    void store.close().finally(() => process.exit(0));
+  };
+  server.onclose = shutdown;
+  process.stdin.on("end", shutdown);
 }
 
 main().catch((err) => {
