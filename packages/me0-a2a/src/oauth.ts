@@ -93,8 +93,12 @@ async function discoverIssuerMetadata(issuer: string): Promise<IssuerMetadata> {
         assertSafeUrl(meta.jwks_uri, "jwks_uri");
         let tokenEndpoint: string | undefined;
         if (typeof meta.token_endpoint === "string" && meta.token_endpoint) {
-          assertSafeUrl(meta.token_endpoint, "token_endpoint");
-          tokenEndpoint = meta.token_endpoint;
+          try {
+            assertSafeUrl(meta.token_endpoint, "token_endpoint");
+            tokenEndpoint = meta.token_endpoint;
+          } catch {
+            // never advertise an unsafe token endpoint, but keep the jwks_uri
+          }
         }
         return { jwksUri: meta.jwks_uri, tokenEndpoint };
       }

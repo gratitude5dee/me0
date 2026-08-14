@@ -368,7 +368,7 @@ describe("a2a oauth", () => {
     );
   });
 
-  test("insecure discovered token_endpoint is rejected (flow omitted, auth fails closed)", async () => {
+  test("insecure discovered token_endpoint is dropped (flow omitted, jwks still used)", async () => {
     const issuer = `http://127.0.0.1:${jwksServer.port}/insecure-token`;
     const opts = freshOpts();
     if (opts.oauth) {
@@ -384,6 +384,10 @@ describe("a2a oauth", () => {
       securitySchemes: { oauth2?: { flows?: Record<string, unknown> } };
     };
     expect(card.securitySchemes.oauth2?.flows).toEqual({});
+    // the safe jwks_uri is still used: token verification keeps working
+    const token = await mint({ scope: "me0.recall", iss: issuer });
+    const verified = await handleA2ARequest(store.db, opts, rpc(token));
+    expect(verified.status).toBe(200);
   });
 
   test("agent card omits the token flow when no endpoint is known", async () => {
