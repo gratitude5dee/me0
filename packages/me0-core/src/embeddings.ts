@@ -123,10 +123,8 @@ export async function embedBackfill(
   }
   const batchSize = Math.max(1, opts.batchSize ?? 32);
   const maxBatches = opts.maxBatches ?? Number.POSITIVE_INFINITY;
-  const skip = new Set<string>();
   for (let i = 0; i < maxBatches; i++) {
-    const query = skip.size > 0 ? { ...filter, memory_id: { $nin: [...skip] } } : filter;
-    const batch = await memories.find(query).limit(batchSize).toArray();
+    const batch = await memories.find(filter).limit(batchSize).toArray();
     if (batch.length === 0) break;
     report.scanned += batch.length;
     let vectors: number[][];
@@ -139,16 +137,12 @@ export async function embedBackfill(
       report.failed += batch.length;
       break;
     }
+    let batchEmbedded = 0;
     for (let j = 0; j < batch.length; j++) {
       const doc = batch[j];
       const vec = vectors[j];
-      if (!doc) {
+      if (!doc || !vec || vec.length === 0) {
         report.failed++;
-        continue;
-      }
-      if (!vec || vec.length === 0) {
-        report.failed++;
-        skip.add(doc.memory_id);
         continue;
       }
       await memories.updateOne(
@@ -156,6 +150,13 @@ export async function embedBackfill(
         { $set: { embedding: vec, embedding_model: embedder.model } },
       );
       report.embedded++;
+      batchEmbedded++;
+    }
+    if (batchEmbedded === 0) {
+      // no progress: the provider is returning degenerate vectors, so any
+      // further batches would re-fetch the same docs and re-call the API
+      console.warn("me0 embed-backfill stopped (fail-open): batch made no progress");
+      break;
     }
   }
   report.remaining = await memories.countDocuments(filter);

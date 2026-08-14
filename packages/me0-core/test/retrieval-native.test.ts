@@ -184,9 +184,10 @@ describe("embed-backfill", () => {
       },
     });
     const report = await embedBackfill(db, ctx.user_id, { batchSize: 1 });
+    // a zero-progress batch stops the run: no repeat provider calls
     expect(report.embedded).toBe(0);
-    expect(report.failed).toBe(2);
-    expect(report.scanned).toBe(2);
+    expect(report.failed).toBe(1);
+    expect(report.scanned).toBe(1);
     expect(report.remaining).toBe(2);
   });
 });
