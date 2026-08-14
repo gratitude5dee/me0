@@ -6,7 +6,7 @@ export interface AgentCardOptions {
   url: string;
   auth: "bearer" | "none";
   /** advertise an OAuth 2.1 security scheme alongside (or instead of) the static token */
-  oauth?: { issuer: string };
+  oauth?: { issuer: string; tokenUrl?: string | null };
 }
 
 /** A2A v1 Agent Card served at /.well-known/agent-card.json */
@@ -38,12 +38,16 @@ export function buildAgentCard(opts: AgentCardOptions) {
             oauth2: {
               type: "oauth2",
               description: `OAuth 2.1 Bearer JWT access tokens issued by ${opts.oauth.issuer}`,
-              flows: {
-                clientCredentials: {
-                  tokenUrl: `${opts.oauth.issuer.replace(/\/$/, "")}/token`,
-                  scopes: A2A_SCOPES,
-                },
-              },
+              // the token endpoint comes from config or issuer metadata —
+              // when neither is available the flow is omitted rather than guessed
+              flows: opts.oauth.tokenUrl
+                ? {
+                    clientCredentials: {
+                      tokenUrl: opts.oauth.tokenUrl,
+                      scopes: A2A_SCOPES,
+                    },
+                  }
+                : {},
             },
           }
         : {}),

@@ -44,10 +44,17 @@ const MAX_PARTS = 16;
 const MAX_BUDGET_TOKENS = 4000;
 const MAX_QUERY_CHARS = 2000;
 
+/** RFC 7235: the auth-scheme is case-insensitive; returns the credentials or null */
+function bearerCredentials(header: string | null): string | null {
+  const match = /^bearer +/i.exec(header ?? "");
+  return match ? (header as string).slice(match[0].length) : null;
+}
+
 function tokenMatches(provided: string | null, expected: string): boolean {
-  if (!provided) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(`Bearer ${expected}`);
+  const credentials = bearerCredentials(provided);
+  if (credentials === null) return false;
+  const a = Buffer.from(credentials);
+  const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
@@ -109,9 +116,10 @@ async function authenticate(opts: A2AServerOptions, req: Request): Promise<AuthG
     return { sub: null, scopes: null };
   }
   if ((mode === "oauth" || mode === "either") && opts.oauth) {
-    if (!header?.startsWith("Bearer ")) return unauthorized(header !== null);
+    const credentials = bearerCredentials(header);
+    if (credentials === null) return unauthorized(header !== null);
     try {
-      const verified = await verifierFor(opts.oauth).verify(header.slice("Bearer ".length));
+      const verified = await verifierFor(opts.oauth).verify(credentials);
       return { sub: verified.sub, scopes: verified.scopes };
     } catch {
       // fail closed on any validation error; no internals in the body
@@ -159,11 +167,17 @@ export async function handleA2ARequest(
   const url = new URL(req.url);
   if (req.method === "GET" && url.pathname === "/.well-known/agent-card.json") {
     const mode = effectiveAuthMode(opts);
+    const oauthActive = opts.oauth && mode !== "token" ? opts.oauth : undefined;
     return Response.json(
       buildAgentCard({
         url: opts.url ?? `http://localhost:${opts.port ?? 4160}`,
         auth: opts.token && mode !== "oauth" ? "bearer" : "none",
-        oauth: opts.oauth && mode !== "token" ? { issuer: opts.oauth.issuer } : undefined,
+        oauth: oauthActive
+          ? {
+              issuer: oauthActive.issuer,
+              tokenUrl: await verifierFor(oauthActive).tokenEndpoint(),
+            }
+          : undefined,
       }),
     );
   }
