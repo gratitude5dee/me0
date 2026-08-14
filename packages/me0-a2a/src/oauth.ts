@@ -49,10 +49,15 @@ function isLoopbackHost(hostname: string): boolean {
   );
 }
 
-/** issuer-controlled URLs must be https (loopback exempt for local development) */
-function assertSafeUrl(raw: string, what: string): URL {
+/**
+ * issuer-controlled URLs must be https. The loopback exemption exists for
+ * local development only; callers pass allowLoopback=false when the URL comes
+ * from a non-loopback issuer's metadata, so a remote IdP cannot point key or
+ * token fetching at the host's own loopback services.
+ */
+export function assertSafeUrl(raw: string, what: string, allowLoopback = true): URL {
   const url = new URL(raw);
-  if (url.protocol !== "https:" && !isLoopbackHost(url.hostname)) {
+  if (url.protocol !== "https:" && !(allowLoopback && isLoopbackHost(url.hostname))) {
     throw new Error(`${what} must use https (got ${url.protocol}//${url.hostname})`);
   }
   return url;
@@ -71,7 +76,8 @@ interface IssuerMetadata {
  * the request path.
  */
 async function discoverIssuerMetadata(issuer: string): Promise<IssuerMetadata> {
-  assertSafeUrl(issuer, "issuer");
+  const issuerUrl = assertSafeUrl(issuer, "issuer");
+  const allowLoopback = isLoopbackHost(issuerUrl.hostname);
   const base = issuer.replace(/\/$/, "");
   const candidates = [
     `${base}/.well-known/oauth-authorization-server`,
@@ -90,11 +96,11 @@ async function discoverIssuerMetadata(issuer: string): Promise<IssuerMetadata> {
         continue; // metadata does not belong to the configured issuer
       }
       if (typeof meta.jwks_uri === "string" && meta.jwks_uri) {
-        assertSafeUrl(meta.jwks_uri, "jwks_uri");
+        assertSafeUrl(meta.jwks_uri, "jwks_uri", allowLoopback);
         let tokenEndpoint: string | undefined;
         if (typeof meta.token_endpoint === "string" && meta.token_endpoint) {
           try {
-            assertSafeUrl(meta.token_endpoint, "token_endpoint");
+            assertSafeUrl(meta.token_endpoint, "token_endpoint", allowLoopback);
             tokenEndpoint = meta.token_endpoint;
           } catch {
             // never advertise an unsafe token endpoint, but keep the jwks_uri

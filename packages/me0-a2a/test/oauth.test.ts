@@ -6,6 +6,7 @@ import {
   type A2AOAuthOptions,
   type A2AServerOptions,
   MEMORY_PROFILE_EXTENSION_URI,
+  assertSafeUrl,
   handleA2ARequest,
 } from "../src/index.js";
 
@@ -429,5 +430,21 @@ describe("a2a oauth", () => {
       "me0.recall",
     ]);
     expect(card.security.some((s) => "oauth2" in s)).toBe(true);
+  });
+});
+
+describe("assertSafeUrl loopback gating", () => {
+  test("loopback http allowed only when the exemption applies", () => {
+    expect(assertSafeUrl("http://127.0.0.1:9/jwks", "jwks_uri").href).toContain("127.0.0.1");
+    expect(assertSafeUrl("http://[::1]:9/jwks", "jwks_uri", true)).toBeDefined();
+    // metadata from a non-loopback issuer cannot point at loopback services
+    expect(() => assertSafeUrl("http://127.0.0.1:9/jwks", "jwks_uri", false)).toThrow(/https/);
+    expect(() => assertSafeUrl("http://127.8.8.8:9/jwks", "jwks_uri", false)).toThrow(/https/);
+    expect(() => assertSafeUrl("http://[::1]:9/jwks", "jwks_uri", false)).toThrow(/https/);
+  });
+
+  test("https is always accepted; non-loopback http always rejected", () => {
+    expect(assertSafeUrl("https://idp.test/jwks", "jwks_uri", false)).toBeDefined();
+    expect(() => assertSafeUrl("http://internal.test/jwks", "jwks_uri", true)).toThrow(/https/);
   });
 });
