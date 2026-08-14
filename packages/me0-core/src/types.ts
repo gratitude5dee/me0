@@ -81,6 +81,8 @@ export interface MemoryDoc {
   access: { count: number; last_retrieved_at: string | null };
   deleted_at: string | null;
   prov: Provenance;
+  embedding?: number[];
+  embedding_model?: string;
 }
 
 export interface EpisodeDoc {
@@ -98,6 +100,8 @@ export interface EpisodeDoc {
   outcome: { success: boolean | null; artifacts: string[]; commits: string[] };
   handoff: { token: string; banked_state: string; minted_at: string } | null;
   tags: string[];
+  /** set once session-end LLM extraction has processed this episode */
+  extracted_at?: string;
 }
 
 export interface EventDoc {
@@ -136,7 +140,13 @@ export interface AuditDoc {
   diff_summary: string;
 }
 
-export type Evidence = "alias_hit" | "exact_title" | "high_vector" | "keyword" | "weak_semantic";
+export type Evidence =
+  | "alias_hit"
+  | "exact_title"
+  | "graph_hit"
+  | "high_vector"
+  | "keyword"
+  | "weak_semantic";
 export type CreateSafety = "exists" | "probable" | "unknown";
 
 export interface OperationContext {

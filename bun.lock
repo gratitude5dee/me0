@@ -16,6 +16,7 @@
       "name": "me0-a2a",
       "version": "0.1.0",
       "dependencies": {
+        "jose": "6.2.8",
         "me0-core": "workspace:*",
         "mongodb": "^6.12.0",
       },
