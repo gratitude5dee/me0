@@ -2,6 +2,7 @@ export * from "./adapters/hermes.js";
 export * from "./dream.js";
 export * from "./embeddings.js";
 export * from "./engine.js";
+export * from "./extract.js";
 export * from "./importers/index.js";
 export * from "./ops/registry.js";
 export * from "./push.js";

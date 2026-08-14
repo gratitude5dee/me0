@@ -2,6 +2,13 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Me0Engine, type OperationContext } from "me0-core";
 import type { Db } from "mongodb";
 import { MEMORY_PROFILE_EXTENSION_URI, buildAgentCard } from "./card.js";
+import {
+  type A2AAuthMode,
+  type A2AOAuthOptions,
+  SCOPE_PROFILE,
+  SCOPE_RECALL,
+  verifierFor,
+} from "./oauth.js";
 
 export interface A2AServerOptions {
   userId: string;
@@ -10,8 +17,12 @@ export interface A2AServerOptions {
   token?: string;
   /** public base url advertised on the agent card */
   url?: string;
-  /** bind address; defaults to loopback — non-loopback binds require a token */
+  /** bind address; defaults to loopback — non-loopback binds require a token or oauth config */
   hostname?: string;
+  /** OAuth 2.1 resource-server config: validate Bearer JWT access tokens */
+  oauth?: A2AOAuthOptions;
+  /** which credentials are accepted; defaults from which of token/oauth are set */
+  authMode?: A2AAuthMode;
 }
 
 interface JsonRpcRequest {
@@ -46,8 +57,68 @@ function remoteCtx(userId: string): OperationContext {
   return { user_id: userId, harness: "other", agent: "a2a-peer", episode_id: null, remote: true };
 }
 
-function rpcError(id: JsonRpcRequest["id"], code: number, message: string): Response {
-  return Response.json({ jsonrpc: "2.0", id, error: { code, message } });
+function rpcError(
+  id: JsonRpcRequest["id"],
+  code: number,
+  message: string,
+  init?: ResponseInit,
+): Response {
+  return Response.json({ jsonrpc: "2.0", id, error: { code, message } }, init);
+}
+
+function effectiveAuthMode(opts: A2AServerOptions): A2AAuthMode | "none" {
+  if (opts.authMode) return opts.authMode;
+  if (opts.oauth && opts.token) return "either";
+  if (opts.oauth) return "oauth";
+  if (opts.token) return "token";
+  return "none";
+}
+
+/** RFC 6750 §3: 401s carry a WWW-Authenticate challenge, never internals */
+function unauthorized(hadCredentials: boolean): Response {
+  const challenge = hadCredentials
+    ? 'Bearer realm="me0", error="invalid_token"'
+    : 'Bearer realm="me0"';
+  return new Response("unauthorized", {
+    status: 401,
+    headers: { "www-authenticate": challenge },
+  });
+}
+
+function insufficientScope(id: JsonRpcRequest["id"], scope: string): Response {
+  return rpcError(id, -32003, "insufficient scope", {
+    status: 403,
+    headers: {
+      "www-authenticate": `Bearer realm="me0", error="insufficient_scope", scope="${scope}"`,
+    },
+  });
+}
+
+interface AuthGrant {
+  /** token `sub` when OAuth-authenticated; null for static token / open loopback */
+  sub: string | null;
+  /** granted scopes when OAuth-authenticated; null means unrestricted */
+  scopes: Set<string> | null;
+}
+
+async function authenticate(opts: A2AServerOptions, req: Request): Promise<AuthGrant | Response> {
+  const mode = effectiveAuthMode(opts);
+  if (mode === "none") return { sub: null, scopes: null };
+  const header = req.headers.get("authorization");
+  if ((mode === "token" || mode === "either") && opts.token && tokenMatches(header, opts.token)) {
+    return { sub: null, scopes: null };
+  }
+  if ((mode === "oauth" || mode === "either") && opts.oauth) {
+    if (!header?.startsWith("Bearer ")) return unauthorized(header !== null);
+    try {
+      const verified = await verifierFor(opts.oauth).verify(header.slice("Bearer ".length));
+      return { sub: verified.sub, scopes: verified.scopes };
+    } catch {
+      // fail closed on any validation error; no internals in the body
+      return unauthorized(true);
+    }
+  }
+  return unauthorized(header !== null);
 }
 
 function agentMessage(id: JsonRpcRequest["id"], data: unknown, extension?: string) {
@@ -64,10 +135,16 @@ function agentMessage(id: JsonRpcRequest["id"], data: unknown, extension?: strin
   });
 }
 
-async function audit(db: Db, ctx: OperationContext, op: string, detail: string): Promise<void> {
+async function audit(
+  db: Db,
+  ctx: OperationContext,
+  op: string,
+  detail: string,
+  sub?: string | null,
+): Promise<void> {
   await db.collection("audit").insertOne({
     ts: new Date().toISOString(),
-    actor: { harness: ctx.harness, agent: ctx.agent, remote: true },
+    actor: { harness: ctx.harness, agent: ctx.agent, remote: true, ...(sub ? { sub } : {}) },
     op,
     subject_id: null,
     diff_summary: detail,
@@ -81,19 +158,20 @@ export async function handleA2ARequest(
 ): Promise<Response> {
   const url = new URL(req.url);
   if (req.method === "GET" && url.pathname === "/.well-known/agent-card.json") {
+    const mode = effectiveAuthMode(opts);
     return Response.json(
       buildAgentCard({
         url: opts.url ?? `http://localhost:${opts.port ?? 4160}`,
-        auth: opts.token ? "bearer" : "none",
+        auth: opts.token && mode !== "oauth" ? "bearer" : "none",
+        oauth: opts.oauth && mode !== "token" ? { issuer: opts.oauth.issuer } : undefined,
       }),
     );
   }
   if (req.method !== "POST" || url.pathname !== "/") {
     return new Response("not found", { status: 404 });
   }
-  if (opts.token && !tokenMatches(req.headers.get("authorization"), opts.token)) {
-    return new Response("unauthorized", { status: 401 });
-  }
+  const grant = await authenticate(opts, req);
+  if (grant instanceof Response) return grant;
 
   // reject oversized bodies before buffering: trust Content-Length when
   // declared, then re-check actual byte length after a streaming read
@@ -137,6 +215,9 @@ export async function handleA2ARequest(
       message.extensions?.includes(MEMORY_PROFILE_EXTENSION_URI) ||
       parts.some((p) => p.data?.extension === MEMORY_PROFILE_EXTENSION_URI);
     if (wantsProfile) {
+      if (grant.scopes && !grant.scopes.has(SCOPE_PROFILE)) {
+        return insufficientScope(rpc.id, SCOPE_PROFILE);
+      }
       const rawBudget = parts.find((p) => typeof p.data?.budget_tokens === "number")?.data
         ?.budget_tokens as number | undefined;
       const budget =
@@ -144,7 +225,7 @@ export async function handleA2ARequest(
           ? Math.min(Math.max(Math.floor(rawBudget), 1), MAX_BUDGET_TOKENS)
           : undefined;
       const pack = await engine.contextPack(ctx, { scope: "a2a:profile", budget_tokens: budget });
-      await audit(db, ctx, "a2a.memory_profile", `budget=${pack._meta.budget_tokens}`);
+      await audit(db, ctx, "a2a.memory_profile", `budget=${pack._meta.budget_tokens}`, grant.sub);
       return agentMessage(rpc.id, pack, MEMORY_PROFILE_EXTENSION_URI);
     }
 
@@ -153,6 +234,9 @@ export async function handleA2ARequest(
     if (skillPart?.data) {
       const skill = skillPart.data.skill as string;
       if (!SKILLS.has(skill)) return rpcError(rpc.id, -32602, `unknown skill: ${skill}`);
+      if (grant.scopes && !grant.scopes.has(SCOPE_RECALL)) {
+        return insufficientScope(rpc.id, SCOPE_RECALL);
+      }
       const args = (skillPart.data.args ?? {}) as Record<string, unknown>;
       let result: unknown;
       if (skill === "memory.recall") {
@@ -173,15 +257,18 @@ export async function handleA2ARequest(
           question: String(args.question ?? "").slice(0, MAX_QUERY_CHARS),
         });
       }
-      await audit(db, ctx, `a2a.${skill}`, JSON.stringify(args).slice(0, 120));
+      await audit(db, ctx, `a2a.${skill}`, JSON.stringify(args).slice(0, 120), grant.sub);
       return agentMessage(rpc.id, result);
     }
 
     // plain text part → recall
     const text = parts.find((p) => typeof p.text === "string" && p.text.trim())?.text;
     if (text) {
+      if (grant.scopes && !grant.scopes.has(SCOPE_RECALL)) {
+        return insufficientScope(rpc.id, SCOPE_RECALL);
+      }
       const result = await engine.recall(ctx, { query: text.slice(0, MAX_QUERY_CHARS) });
-      await audit(db, ctx, "a2a.memory.recall", text.slice(0, 120));
+      await audit(db, ctx, "a2a.memory.recall", text.slice(0, 120), grant.sub);
       return agentMessage(rpc.id, result);
     }
 
@@ -196,9 +283,9 @@ export async function handleA2ARequest(
 export function startA2AServer(db: Db, opts: A2AServerOptions) {
   const port = opts.port ?? 4160;
   const hostname = opts.hostname ?? "127.0.0.1";
-  if (hostname !== "127.0.0.1" && hostname !== "localhost" && !opts.token) {
+  if (hostname !== "127.0.0.1" && hostname !== "localhost" && !opts.token && !opts.oauth) {
     throw new Error(
-      `refusing to bind A2A server to ${hostname} without a bearer token (set --a2a-token or ME0_A2A_TOKEN)`,
+      `refusing to bind A2A server to ${hostname} without auth (set --a2a-token/ME0_A2A_TOKEN or OAuth issuer/audience)`,
     );
   }
   return Bun.serve({
