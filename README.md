@@ -5,7 +5,7 @@
 ### The zeroth layer under every agent: **you.**
 
 **One portable, MongoDB-backed personal context graph + agent session memory for
-Claude Code · Codex · pi · OpenClaw — switch harnesses freely; your context comes with you.**
+Claude Code · Codex · pi · OpenClaw · Hermes — switch harnesses freely; your context comes with you.**
 
 [![CI](https://github.com/gratitude5dee/me0/actions/workflows/ci.yml/badge.svg)](https://github.com/gratitude5dee/me0/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -62,10 +62,12 @@ me0 inverts ownership: **memory is a property of the person, not the harness.** 
 | 📣 **Gated ambient push** | Per-prompt recall that fires only at confidence ≥ 0.7, caps at 3, and suppresses anything already surfaced this session. Every push is logged to `retrievals` — false-fire rate is a CI metric, not a vibe. |
 | 🌙 **The nightly dream** | Deterministic consolidation: hard-purge expired soft-deletes, normalized-text dedupe (supersede, don't destroy), heat-based tier promotion/demotion, identity-card recompilation, cached pack refresh. All audited. |
 | 🚚 **Migration importers ($0, idempotent)** | `CLAUDE.md` / `AGENTS.md` / `MEMORY.md` / `USER.md` / `SOUL.md`, Claude Code auto-memory + transcripts, pi JSONL sessions, OpenClaw workspaces → typed, provenance-stamped memories. Re-import is a NOOP. |
-| 🔌 **Four harness adapters + a portable floor** | Claude Code plugin (hooks), Codex (`config.toml` + `AGENTS.md` preamble), native pi extension, native OpenClaw plugin — plus `plugin.json`/`mcp.json`/skills so any Agent Plugins v1.0.0 client can mount it. |
+| 🔌 **Five harness adapters + a portable floor** | Claude Code plugin (hooks), Codex (`config.toml` + `AGENTS.md` preamble), native pi extension, native OpenClaw plugin, Hermes memory provider — plus `plugin.json`/`mcp.json`/skills so any Agent Plugins v1.0.0 client can mount it. |
 | 🧪 **Falsifiable memory** | `me0-bench`: recall P@1, adversarial abstention, push precision, pack budget adherence, and a scripted **cross-harness continuity** gate — hermetic in CI, runnable against live deployments. |
 | 🔑 **Zero required API keys** | The entire v0.1/v0.2 pipeline — capture, extraction heuristics, retrieval, consolidation, benchmarks — is deterministic. No LLM calls, no embeddings required, no telemetry. Your database, your keys, your memory. |
 | 🛡️ **Fail-open, fail-closed** | Hooks never block your agent (fail-open, 10s timeouts); remote callers never widen visibility (fail-closed: `remember`/`forget`/`handoff` are local-only, remote reads are world-visibility only). |
+| 🔮 **Predictive layer (me0-rfm)** | Flat-table JSONL export for the KumoRFM LocalGraph bridge + deterministic heuristic predictions (`retrieval_utility`, `prefetch`, `forget`) consumed opportunistically by retrieval ranking. [Details ↓](#-v03--predict--federate) |
+| 🌐 **A2A endpoint** | `me0 serve --a2a` — Agent Card, JSON-RPC memory skills, redacted budgeted memory-profile extension. Loopback by default; bearer token required for non-loopback binds; every remote call audited. |
 
 ## 🏗️ Architecture
 
@@ -116,9 +118,9 @@ me0 doesn't sit *next to* a database — the memory semantics are built out of M
 | **Idempotent migration** | Importers lean on upserts, normalized-text dedupe, and deterministic episode keys (`ep_claude_<hash>`, `ep_pi_<id>`) — re-running any import is a NOOP by construction. |
 | **Telemetry as schema** | Every surfaced memory writes a `retrievals` row (surface: `pack|recall|push|delta`); every write lands in an append-only `audit` stream. Retrieval already reads utility weights from a `predictions` collection when present — the learning loop is plumbed. |
 | **Identity under uniqueness** | Unique compound indexes (`{user_id, slug}`, `{user_id, memory_id}`, `{user_id, episode_id}`, …) plus `{user_id, tier, kind}` and `{user_id, "prov.episode_id"}` for the hot query paths. |
-| **Hermetic by default** | The entire test suite (~75 tests) runs on `mongodb-memory-server` — no Atlas account, no API keys, no network. CI gates typecheck, lint (`noExplicitAny: error`), and the full bench. |
+| **Hermetic by default** | The entire test suite (109 tests) runs on `mongodb-memory-server` — no Atlas account, no API keys, no network. CI gates typecheck, lint (`noExplicitAny: error`), and the full bench. |
 
-**The Atlas on-ramp (v0.3):** the schema was designed for MongoDB's AI stack before the code caught up — each lands as a swap, not a rewrite:
+**The Atlas on-ramp (v0.3+):** the schema was designed for MongoDB's AI stack before the code caught up — each lands as a swap, not a rewrite:
 
 | Coming | MongoDB feature |
 |---|---|
@@ -190,7 +192,7 @@ Exposed three ways, all dispatching the same registry: **me0-mcp** (stdio MCP se
 | **Codex** | `config.toml` MCP entry + `AGENTS.md` preamble (usage doctrine: pack at start, recall-before-asking, never guess) | episode verbs via MCP | on-demand `context_pack` / `recall` | ✅ |
 | **pi** | native TypeScript extension (pi has no built-in MCP — me0 registers 9 `memory_*` tools directly) | `session_start` / `tool_call` / `session_shutdown` events | pack injected at session start | ✅ |
 | **OpenClaw** | native plugin: swaps file-based `memory_search`/`memory_get` for the graph, exposes 14 verbs as tools | full lifecycle hooks; **banks a handoff before compaction** (`session:compact:before`) and reopens a fresh episode | `ME0.md` pack at `agent:bootstrap`; `delta` on gateway heartbeat | ✅ |
-| **Hermes** | memory-provider plugin (schema already carries `harness: "hermes"`) | — | — | 🔜 v0.3 |
+| **Hermes** | memory-provider plugin (`plugins/memory/me0/`, wired via `hermes config set memory.provider me0`) replacing the 2,200-char `MEMORY.md` cap | `sync_turn` / `on_session_end` / `on_session_switch` / `on_pre_compress` hooks | frozen-snapshot context pack | ✅ |
 | **Any Agent Plugins client** | portable floor: `plugin.json` (v1.0.0) + `mcp.json` + `skills/` | pull-only | skill-taught verbs | ✅ |
 
 Three skills teach the tools (`skills/me0`, `me0-handoff`, `me0-setup`) — including the house rule every adapter enforces: *if recall returns no recorded memory, say so; do not guess.*
@@ -204,6 +206,7 @@ me0 import-context            # CLAUDE.md / AGENTS.md / MEMORY.md / USER.md / SO
 me0 import-claude             # Claude Code auto-memory + .jsonl transcripts → memories + episodes/events
 me0 import-pi                 # ~/.pi/agent/sessions/**/*.jsonl → episodes + events
 me0 import-openclaw           # MEMORY.md→facts · USER.md→preferences · SOUL.md→beliefs · daily logs→episodes
+me0 import-hermes             # Hermes state.db sessions + memories/*.md → episodes + memories
 ```
 
 Headings become concept entities; `prefer/always/never` → preference, `decided` → decision, imperative how-tos → procedure, else fact. Everything lands with `method: "deterministic"` provenance and normalized-text dedupe — re-import never duplicates.
@@ -229,8 +232,10 @@ Full rationale, data model, and the research it stands on (gbrain, memtrace, 90-
 
 ## 🔮 v0.3 — predict & federate
 
+Shipped:
+
 - **me0-rfm (predictive layer)** — `me0 rfm --out <dir>` exports RFM-friendly flat tables under `<dir>/rfm/` (JSONL: `users`, `memories`, `entities`, `edges`, `sessions`, `tool_calls`, `outcomes`, `retrievals`; redacted structure-only by default, `--no-redact` to keep text) for the KumoRFM LocalGraph bridge, and writes deterministic **heuristic predictions** (`retrieval_utility` = used/surfaced ratio, `prefetch` = recency×frequency, `forget` = Ebbinghaus decay from last retrieval or creation) into `predictions` — consumed opportunistically by retrieval ranking. PQL sketches per task live in `packages/me0-rfm/src/pql.ts`. RFM is an enhancement tier, never a dependency. `me0 dream --rfm` runs it after consolidation.
-- **A2A endpoint** (`me0 serve --a2a [--port 4160] [--a2a-token <tok>]`) — Agent Card at `/.well-known/agent-card.json` with skills `memory.recall`, `memory.context_pack`, `memory.synthesize`, plus the `https://me0.dev/a2a/ext/memory-profile/v1` extension returning a redacted, budgeted profile pack as a DataPart. Hard rule: A2A callers are `remote` — visibility ceiling `world`, identity card and episode summaries suppressed, local-only verbs rejected, every call audited.
+- **A2A endpoint** (`me0 serve --a2a [--port 4160] [--host <addr>] [--a2a-token <tok>] [--url <public-url>]`) — Agent Card at `/.well-known/agent-card.json` with skills `memory.recall`, `memory.context_pack`, `memory.synthesize`, plus the `https://me0.dev/a2a/ext/memory-profile/v1` extension returning a redacted, budgeted profile pack as a DataPart. Hard rules: A2A callers are `remote` — visibility ceiling `world`, identity card and episode summaries suppressed, local-only verbs rejected, no telemetry mutation, every call audited. Hardened by default: loopback bind unless a bearer token is set (`--a2a-token` / `ME0_A2A_TOKEN`, constant-time compared), 64 KiB byte-enforced body limit, capped parts/budgets/queries, generic remote errors. Put public deployments behind a TLS-terminating reverse proxy.
 
 ## 🗺️ Roadmap
 
@@ -246,10 +251,11 @@ me0/
 ├── adapters/codex/                         # AGENTS.md preamble
 ├── extensions/pi/                          # native pi extension (9 memory_* tools)
 ├── openclaw.plugin.json                    # OpenClaw manifest
+├── hermes/ · plugins/memory/me0/           # Hermes memory-provider plugin (manifest + implementation)
 └── packages/
     ├── me0-core/                           # engine · op registry · schema validators · retrieval · dream · importers
     ├── me0-mcp/                            # stdio MCP server
-    ├── me0-cli/                            # init · doctor · verify · op · hook · import-* · export · dream
+    ├── me0-cli/                            # init · doctor · verify · op · hook · import-* · export · dream · serve · rfm
     ├── me0-openclaw/                       # native OpenClaw plugin
     ├── me0-rfm/                            # predictive layer: flat-table export · heuristic predictions · PQL sketches
     ├── me0-a2a/                            # A2A endpoint: agent card · memory skills · memory-profile extension
