@@ -71,9 +71,10 @@ export async function logRetrievals(db: Db, rows: RetrievalRow[]): Promise<void>
 
 /**
  * Record that surfaced memories were actually used. Plain collections update
- * `used` in place; time-series rows are immutable, so usage is appended to
- * the plain `retrieval_feedback` side collection instead (heuristics read
- * both). Returns the number of surfacing rows acknowledged.
+ * `used` in place; time-series rows are immutable, so usage is upserted into
+ * the plain `retrieval_feedback` side collection instead, one document per
+ * (user_id, memory_id), keeping repeated acknowledgements idempotent
+ * (heuristics read both). Returns the number of surfacing rows acknowledged.
  */
 export async function markRetrievalsUsed(
   db: Db,
@@ -91,13 +92,14 @@ export async function markRetrievalsUsed(
   }
   const rows = await db.collection("retrievals").find(filter).toArray();
   if (rows.length === 0) return 0;
-  await db.collection("retrieval_feedback").insertMany(
-    rows.map((r) => ({
-      ts: new Date(),
-      user_id: userId,
-      memory_id: r.memory_id,
-      surface: r.surface,
-      used: true,
+  const acknowledged = [...new Set(rows.map((r) => r.memory_id as string))];
+  await db.collection("retrieval_feedback").bulkWrite(
+    acknowledged.map((memoryId) => ({
+      updateOne: {
+        filter: { user_id: userId, memory_id: memoryId },
+        update: { $set: { ts: new Date(), used: true } },
+        upsert: true,
+      },
     })),
   );
   return rows.length;

@@ -205,7 +205,7 @@ async function cmdDoctor(args: string[]) {
       console.log(
         telType === "timeseries"
           ? "retrievals: time-series collection"
-          : `retrievals: ${telType} collection — upgrade path: \`me0 export\`, drop the retrievals collection, re-run \`me0 init\` to recreate it as time-series`,
+          : `retrievals: ${telType} collection — upgrade path: drop the retrievals collection and re-run \`me0 init\` to recreate it as time-series (telemetry history is NOT preserved: \`me0 export\` does not cover retrievals)`,
       );
       for (const idx of TTL_INDEXES) {
         const names = (await db.collection(idx.collection).indexes()).map((i) => i.name);

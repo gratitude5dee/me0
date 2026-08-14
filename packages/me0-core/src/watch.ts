@@ -22,9 +22,9 @@ export interface WatchMemoriesOptions {
 
 /**
  * Tail the memories collection for one user via a change stream — the
- * substrate for live-sync between harnesses. Delete events carry no full
- * document, so they pass the filter unscoped; consumers only see the
- * document key.
+ * substrate for live-sync between harnesses. Hard deletes carry no full
+ * document and cannot be attributed to a user, so they are excluded;
+ * soft-deletes (forget) surface as updates with a non-null deleted_at.
  */
 export function watchMemories(
   db: Db,
@@ -34,7 +34,7 @@ export function watchMemories(
   const docMatch: Document = { "fullDocument.user_id": userId };
   if (opts.kind) docMatch["fullDocument.kind"] = opts.kind;
   if (opts.tier) docMatch["fullDocument.tier"] = opts.tier;
-  const pipeline = [{ $match: { $or: [{ operationType: "delete" }, docMatch] } }];
+  const pipeline = [{ $match: docMatch }];
   return db.collection<MemoryDoc>("memories").watch(pipeline, { fullDocument: "updateLookup" });
 }
 
