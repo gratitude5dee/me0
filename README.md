@@ -227,9 +227,14 @@ A memory layer that can't be scored is a vibe. `me0-bench` runs a synthetic pers
 
 Full rationale, data model, and the research it stands on (gbrain, memtrace, 90-paper memory survey, Agent Plugins / A2A / MCP specs): [`docs/goal.md`](docs/goal.md).
 
+## 🔮 v0.3 — predict & federate
+
+- **me0-rfm (predictive layer)** — `me0 rfm --out <dir>` exports RFM-friendly flat tables under `<dir>/rfm/` (JSONL: `users`, `memories`, `entities`, `edges`, `sessions`, `tool_calls`, `outcomes`, `retrievals`; redacted structure-only by default, `--no-redact` to keep text) for the KumoRFM LocalGraph bridge, and writes deterministic **heuristic predictions** (`retrieval_utility` = used/surfaced ratio, `prefetch` = recency×frequency, `forget` = Ebbinghaus decay from last retrieval or creation) into `predictions` — consumed opportunistically by retrieval ranking. PQL sketches per task live in `packages/me0-rfm/src/pql.ts`. RFM is an enhancement tier, never a dependency. `me0 dream --rfm` runs it after consolidation.
+- **A2A endpoint** (`me0 serve --a2a [--port 4160] [--a2a-token <tok>]`) — Agent Card at `/.well-known/agent-card.json` with skills `memory.recall`, `memory.context_pack`, `memory.synthesize`, plus the `https://me0.dev/a2a/ext/memory-profile/v1` extension returning a redacted, budgeted profile pack as a DataPart. Hard rule: A2A callers are `remote` — visibility ceiling `world`, identity card and episode summaries suppressed, local-only verbs rejected, every call audited.
+
 ## 🗺️ Roadmap
 
-- **v0.3 — predict & federate:** KumoRFM producer writing `predictions` (prefetch · forget-scoring · utility rerank — the consumer hook is already live in retrieval), `$vectorSearch` + Voyage automated embeddings, native `$rankFusion`, `$graphLookup` recall arm, TTL + time-series + change streams, LLM session-end extraction (`method: "llm"` provenance is already in the schema), Hermes memory-provider plugin, A2A agent card.
+- **v0.3+ (remaining):** native KumoRFM execution via the official SDK/MCP bridge, `$vectorSearch` + Voyage automated embeddings, native `$rankFusion`, `$graphLookup` recall arm, TTL + time-series + change streams, LLM session-end extraction (`method: "llm"` provenance is already in the schema), A2A OAuth 2.1.
 - **v1.0 — the standard candle:** MEMORY_VERBS conformance certification, marketplace listings, stability guarantees, published benchmark results.
 
 ## 📁 Repository layout
@@ -246,6 +251,8 @@ me0/
     ├── me0-mcp/                            # stdio MCP server
     ├── me0-cli/                            # init · doctor · verify · op · hook · import-* · export · dream
     ├── me0-openclaw/                       # native OpenClaw plugin
+    ├── me0-rfm/                            # predictive layer: flat-table export · heuristic predictions · PQL sketches
+    ├── me0-a2a/                            # A2A endpoint: agent card · memory skills · memory-profile extension
     └── me0-bench/                          # evaluation harness + synthetic persona
 ```
 
