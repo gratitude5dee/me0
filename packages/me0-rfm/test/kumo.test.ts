@@ -121,6 +121,21 @@ describe("kumo backend (fake MCP server over stdio)", () => {
     expect(after).toEqual(["heuristic"]);
   });
 
+  test("a run yielding no usable predictions errors and keeps existing scores", async () => {
+    await heuristicBackend.predict(store.db, ctx);
+    const before = await store.db.collection("predictions").countDocuments({ model: "heuristic" });
+    expect(before).toBeGreaterThan(0);
+    const emptyBackend = new KumoBackend({
+      apiKey: "empty-key",
+      command: process.execPath,
+      args: [FAKE_SERVER],
+      workDir: mkdtempSync(join(tmpdir(), "me0-kumo-empty-")),
+    });
+    await expect(emptyBackend.predict(store.db, ctx)).rejects.toThrow(/no usable predictions/);
+    const after = await store.db.collection("predictions").countDocuments({ model: "heuristic" });
+    expect(after).toBe(before);
+  });
+
   test("missing API key fails with clear guidance", async () => {
     const backend = new KumoBackend({ command: process.execPath, args: [FAKE_SERVER] });
     const prev = { a: process.env.ME0_KUMO_API_KEY, b: process.env.KUMO_API_KEY };

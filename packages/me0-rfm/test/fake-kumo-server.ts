@@ -13,7 +13,9 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 const MODE =
   process.env.FAKE_KUMO_MODE === "unauthorized" || process.env.KUMO_API_KEY === "bad-key"
     ? "unauthorized"
-    : "ok";
+    : process.env.KUMO_API_KEY === "empty-key"
+      ? "empty"
+      : "ok";
 
 let memoriesCsvPath: string | null = null;
 
@@ -71,6 +73,7 @@ async function main() {
       case "materialize_graph":
         return ok({ num_nodes: 1, num_edges: 0, time_ranges: {} });
       case "predict": {
+        if (MODE === "empty") return ok({ predictions: [] });
         const query = String(args.query ?? "");
         const indices = Array.isArray(args.indices) ? args.indices : [];
         if (query.includes("LIST_DISTINCT")) {
