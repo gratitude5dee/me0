@@ -123,8 +123,10 @@ export async function embedBackfill(
   }
   const batchSize = Math.max(1, opts.batchSize ?? 32);
   const maxBatches = opts.maxBatches ?? Number.POSITIVE_INFINITY;
+  const skip = new Set<string>();
   for (let i = 0; i < maxBatches; i++) {
-    const batch = await memories.find(filter).limit(batchSize).toArray();
+    const query = skip.size > 0 ? { ...filter, memory_id: { $nin: [...skip] } } : filter;
+    const batch = await memories.find(query).limit(batchSize).toArray();
     if (batch.length === 0) break;
     report.scanned += batch.length;
     let vectors: number[][];
@@ -140,8 +142,13 @@ export async function embedBackfill(
     for (let j = 0; j < batch.length; j++) {
       const doc = batch[j];
       const vec = vectors[j];
-      if (!doc || !vec || vec.length === 0) {
+      if (!doc) {
         report.failed++;
+        continue;
+      }
+      if (!vec || vec.length === 0) {
+        report.failed++;
+        skip.add(doc.memory_id);
         continue;
       }
       await memories.updateOne(

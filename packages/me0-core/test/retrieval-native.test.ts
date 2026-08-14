@@ -172,6 +172,23 @@ describe("embed-backfill", () => {
     expect(report.failed).toBe(1);
     expect(report.remaining).toBe(1);
   });
+
+  test("terminates when the provider returns degenerate (empty) vectors", async () => {
+    setEmbedder(null);
+    await engine.remember(ctx, { text: "degenerate one", kind: "fact" });
+    await engine.remember(ctx, { text: "degenerate two", kind: "fact" });
+    setEmbedder({
+      model: "empty-vectors",
+      async embed(texts: string[]): Promise<number[][]> {
+        return texts.map(() => []);
+      },
+    });
+    const report = await embedBackfill(db, ctx.user_id, { batchSize: 1 });
+    expect(report.embedded).toBe(0);
+    expect(report.failed).toBe(2);
+    expect(report.scanned).toBe(2);
+    expect(report.remaining).toBe(2);
+  });
 });
 
 describe("vector arm (exact cosine fallback)", () => {
@@ -185,6 +202,15 @@ describe("vector arm (exact cosine fallback)", () => {
     expect(hit).toBeDefined();
     expect(hit?.evidence).toBe("high_vector");
     expect(r.results.some((x) => x.text.includes("guitar"))).toBe(false);
+  });
+
+  test("vectors from a different embedding model are ignored", async () => {
+    setEmbedder(fakeEmbedder("old-model"));
+    await engine.remember(ctx, { text: "morning latte ritual v2", kind: "preference" });
+    setEmbedder(fakeEmbedder("new-model"));
+    const r = await engine.recall(ctx, { query: "espresso coffee" });
+    const hit = r.results.find((x) => x.text === "morning latte ritual v2");
+    expect(hit?.evidence ?? "none").not.toBe("high_vector");
   });
 
   test("query embedding failure fails open to lexical arms", async () => {
