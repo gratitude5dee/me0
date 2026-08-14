@@ -8,7 +8,12 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
-const MODE = process.env.FAKE_KUMO_MODE ?? "ok";
+// unauthorized via env flag or a "bad-key" API key (the bridge spawns the
+// server with a minimal environment, so the key is the reliable channel)
+const MODE =
+  process.env.FAKE_KUMO_MODE === "unauthorized" || process.env.KUMO_API_KEY === "bad-key"
+    ? "unauthorized"
+    : "ok";
 
 let memoriesCsvPath: string | null = null;
 
