@@ -19,7 +19,6 @@ import {
 import { exportTables, runHeuristics } from "me0-rfm";
 import { configDir, loadConfig, saveConfig } from "./config.js";
 import { detectHermes, hermesHome, printHermesGuidance, wireHermesConfig } from "./hermes.js";
-import { importHermes } from "./import-hermes.js";
 import { defaultOpenClawWorkspace, importOpenClawWorkspace } from "./import-openclaw.js";
 import { openclawDir, wireOpenClaw } from "./openclaw.js";
 import { defaultPiSessionsDir, importPiSessions, wirePi } from "./pi.js";
@@ -276,6 +275,13 @@ async function cmdImportHermes(args: string[]) {
   const userId = flag(args, "--user") ?? cfg.user_id;
   const dbPath = flag(args, "--db");
   const home = flag(args, "--home");
+  if (typeof Bun === "undefined") {
+    console.error(
+      "import-hermes requires the Bun runtime (uses bun:sqlite): bun x me0 import-hermes",
+    );
+    process.exit(1);
+  }
+  const { importHermes } = await import("./import-hermes.js");
   await withEngine(uri, async (engine, db) => {
     const counts = await importHermes(db, engine, userId, {
       dbPath,
@@ -437,6 +443,10 @@ async function cmdServe(args: string[]) {
     console.error("serve currently supports --a2a only (stdio MCP is `me0-mcp`)");
     process.exit(1);
   }
+  if (typeof Bun === "undefined") {
+    console.error("me0 serve requires the Bun runtime (uses Bun.serve): bun x me0 serve --a2a");
+    process.exit(1);
+  }
   const port = Number(flag(args, "--port") ?? 4160);
   const token = flag(args, "--a2a-token") ?? process.env.ME0_A2A_TOKEN;
   const hostname = flag(args, "--host") ?? "127.0.0.1";
@@ -470,12 +480,20 @@ async function cmdOp(args: string[]) {
   });
 }
 
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
 async function hookPayload(args: string[]): Promise<Record<string, unknown>> {
   if (args[1] && !args[1].startsWith("--")) return JSON.parse(args[1]);
   if (!process.stdin.isTTY) {
     try {
       const text = await Promise.race([
-        new Response(Bun.stdin.stream()).text(),
+        readStdin(),
         new Promise<string>((resolve) => setTimeout(() => resolve(""), 2000)),
       ]);
       if (text.trim()) return JSON.parse(text);

@@ -20,8 +20,7 @@ Code or Codex learned about you yesterday is in Hermes's system prompt today.
 
 ## Install
 
-1. Set up me0 (see the repo root README): `bun install && bun link me0-cli &&
-   bun link me0-mcp`, then `me0 init` and `me0 verify`.
+1. Set up me0 (see the repo root README): `npm i -g @wzrdtech/me0`, then `me0 init` and `me0 verify`.
 2. Copy this directory into your hermes-agent checkout:
    `cp -r plugins/memory/me0 <hermes-agent>/plugins/memory/me0`
 3. Activate it: `hermes config set memory.provider me0`
