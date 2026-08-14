@@ -133,7 +133,6 @@ async function exportToolCalls(
   db: Db,
   userId: string,
   outDir: string,
-  redact: boolean,
 ): Promise<{ name: string; rows: number; path: string }> {
   const episodeIds = await db
     .collection("episodes")
@@ -149,7 +148,9 @@ async function exportToolCalls(
   const lines = events.map((d) =>
     JSON.stringify({
       session_id: d.episode_id,
-      tool_name: redact ? null : (d.tool ?? null),
+      // tool names are bounded categoricals (bash, edit, …), not free text —
+      // kept under redaction so the next_tool PQL task has a target column
+      tool_name: d.tool ?? null,
       ok: d.ok,
       ts: d.ts,
     }),
@@ -165,18 +166,21 @@ export async function exportTables(
   opts: ExportOptions = {},
 ): Promise<ExportReport> {
   const redact = opts.redact ?? true;
-  mkdirSync(outDir, { recursive: true });
+  // namespaced under rfm/ so the flat tables never clobber a `me0 export`
+  // backup written to the same directory (both use users/memories/… names)
+  const tablesDir = join(outDir, "rfm");
+  mkdirSync(tablesDir, { recursive: true });
   const tables: ExportReport["tables"] = [];
   for (const spec of TABLES) {
     const docs = await db.collection(spec.collection).find(spec.filter(userId)).toArray();
     const rows = docs
       .map((d) => spec.row(d, redact))
       .filter((r): r is Record<string, unknown> => r !== null);
-    const path = join(outDir, `${spec.name}.jsonl`);
+    const path = join(tablesDir, `${spec.name}.jsonl`);
     const lines = rows.map((r) => JSON.stringify(r));
     writeFileSync(path, lines.length > 0 ? `${lines.join("\n")}\n` : "");
     tables.push({ name: spec.name, rows: rows.length, path });
   }
-  tables.push(await exportToolCalls(db, userId, outDir, redact));
+  tables.push(await exportToolCalls(db, userId, tablesDir));
   return { tables };
 }

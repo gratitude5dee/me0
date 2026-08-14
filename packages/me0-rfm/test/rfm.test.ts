@@ -22,7 +22,7 @@ const ctx: OperationContext = {
 const other: OperationContext = { ...ctx, user_id: "u_other" };
 
 function readRows(name: string): Array<Record<string, unknown>> {
-  const raw = readFileSync(join(outDir, `${name}.jsonl`), "utf-8").trim();
+  const raw = readFileSync(join(outDir, "rfm", `${name}.jsonl`), "utf-8").trim();
   return raw ? raw.split("\n").map((l) => JSON.parse(l)) : [];
 }
 
@@ -78,6 +78,8 @@ describe("export", () => {
 
   test("redacts free text by default; --no-redact keeps it", async () => {
     expect(readRows("memories").every((m) => m.text === null)).toBe(true);
+    // tool names are categorical, kept even under redaction
+    expect(readRows("tool_calls")[0]?.tool_name).toBe("bash");
     await exportTables(store.db, ctx.user_id, outDir, { redact: false });
     expect(readRows("memories").some((m) => m.text === "squash-merge only")).toBe(true);
   });

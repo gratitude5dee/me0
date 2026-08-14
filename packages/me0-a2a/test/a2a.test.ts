@@ -236,6 +236,28 @@ describe("message/send", () => {
     expect(body.error.message).toBe("internal error");
   });
 
+  test("oversized bodies are rejected before parsing", async () => {
+    // declared oversize via Content-Length
+    const declared = await handleA2ARequest(
+      store.db,
+      opts,
+      new Request("http://localhost:4160/", {
+        method: "POST",
+        headers: { "content-length": String(1024 * 1024) },
+        body: "{}",
+      }),
+    );
+    expect(((await declared.json()) as { error: { code: number } }).error.code).toBe(-32600);
+    // actual bytes over the limit; multibyte chars make byte length > string length
+    const big = "é".repeat(48 * 1024);
+    const res = await handleA2ARequest(
+      store.db,
+      opts,
+      new Request("http://localhost:4160/", { method: "POST", body: big }),
+    );
+    expect(((await res.json()) as { error: { code: number } }).error.code).toBe(-32600);
+  });
+
   test("unknown methods and malformed json get JSON-RPC errors", async () => {
     const res = await handleA2ARequest(
       store.db,

@@ -95,13 +95,24 @@ export async function handleA2ARequest(
     return new Response("unauthorized", { status: 401 });
   }
 
+  // reject oversized bodies before buffering: trust Content-Length when
+  // declared, then re-check actual byte length after a streaming read
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (declared > MAX_BODY_BYTES) {
+    return rpcError(null, -32600, "request too large");
+  }
   let rpc: JsonRpcRequest;
   try {
-    const raw = await req.text();
-    if (raw.length > MAX_BODY_BYTES) {
-      return rpcError(null, -32600, "request too large");
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for await (const chunk of req.body ?? []) {
+      size += chunk.byteLength;
+      if (size > MAX_BODY_BYTES) {
+        return rpcError(null, -32600, "request too large");
+      }
+      chunks.push(chunk);
     }
-    rpc = JSON.parse(raw) as JsonRpcRequest;
+    rpc = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as JsonRpcRequest;
   } catch {
     return rpcError(null, -32700, "parse error");
   }
