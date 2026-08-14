@@ -43,4 +43,7 @@ description: How to run and end-to-end test the me0 memory layer (CLI, MCP serve
 ## Gotchas
 - README quickstart's root-level `bun link @wzrdtech/me0 && bun link @wzrdtech/me0-mcp` fails on a fresh clone ("Package is not linked") — you must run bare `bun link` inside each package dir first. Also, root-level `bun link <name>` mutates the root package.json (adds `link:` deps) — restore with git checkout if dirtied.
 - Since the npm-publish rename (package `me0-cli` → `@wzrdtech/me0`, bin → `dist/main.js`), run `bun run build` inside each package before linking — the bins point at `dist/`. Stale bun links from older checkouts can hang silently: `rm ~/.bun/bin/me0*` and re-link.
+- Seeding `entities`/`edges` directly via mongosh requires the full `prov` object (`harness/agent/method/confidence/extracted_at`) or schema validation rejects the insert.
+- The `mongo:8` docker tag is now 8.1+ (native `$rankFusion`); to test the in-process rank-fusion path on an older server, spin up `docker run -d --name me0-mongo80 -p 127.0.0.1:27018:27017 mongo:8.0`.
+- MCP stdio testing needs a held-open FIFO — closing stdin right after writing (e.g. a heredoc) yields "Operation interrupted because client was closed".
 - Node-path testing (no Bun at runtime): `bun run build` + `npm pack` in packages/me0-cli and packages/me0-mcp, `npm install` the tarballs in a clean dir, then drive `./node_modules/.bin/me0` / `me0-mcp`. `me0 serve --a2a` and `me0 import-hermes` are Bun-only and must exit 1 with a clear error under node.
