@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "mongodb";
+import { slugify } from "./importers/markdown.js";
 import type {
+  EntityDoc,
   EpisodeDoc,
   EventDoc,
   MemoryDoc,
@@ -26,7 +28,11 @@ export interface LlmProviderConfig {
   base_url: string;
   model: string;
   api_key?: string;
+  /** Request timeout in ms; a stalled endpoint must never hang session end. */
+  timeout_ms?: number;
 }
+
+export const DEFAULT_LLM_TIMEOUT_MS = 30_000;
 
 /**
  * OpenAI-compatible chat-completions client over `fetch`. Works with OpenAI,
@@ -43,6 +49,7 @@ export function openAiCompatProvider(cfg: LlmProviderConfig): LlmProvider {
         method: "POST",
         headers,
         body: JSON.stringify({ model: cfg.model, messages, temperature: 0 }),
+        signal: AbortSignal.timeout(cfg.timeout_ms ?? DEFAULT_LLM_TIMEOUT_MS),
       });
       if (!res.ok) {
         throw new Error(`llm request failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
@@ -178,6 +185,48 @@ function normalize(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/** Resolve extracted entity names to entity ids, creating auto entities as needed. */
+async function resolveEntityRefs(
+  db: Db,
+  ctx: OperationContext,
+  names: string[],
+  cache: Map<string, string>,
+): Promise<string[]> {
+  const entities = db.collection<EntityDoc>("entities");
+  const refs: string[] = [];
+  for (const name of names) {
+    const slug = slugify(name);
+    if (!slug) continue;
+    let entityId = cache.get(slug);
+    if (!entityId) {
+      const existing = await entities.findOne({ user_id: ctx.user_id, slug });
+      if (existing) {
+        entityId = existing.entity_id;
+      } else {
+        const doc: EntityDoc = {
+          user_id: ctx.user_id,
+          entity_id: `ent_${randomUUID().slice(0, 12)}`,
+          slug,
+          type: "concept",
+          names: [name],
+          card: "",
+          attrs: {},
+          status: "auto",
+          salience: 0.5,
+          last_retrieved_at: null,
+          created_at: now(),
+          updated_at: now(),
+        };
+        await entities.insertOne(doc);
+        entityId = doc.entity_id;
+      }
+      cache.set(slug, entityId);
+    }
+    if (!refs.includes(entityId)) refs.push(entityId);
+  }
+  return refs;
+}
+
 export interface ExtractOptions {
   /** Items with model confidence below this are skipped. Default 0.5. */
   min_confidence?: number;
@@ -243,6 +292,7 @@ export async function extractEpisode(
   report.considered = items.length;
 
   const memories = db.collection<MemoryDoc>("memories");
+  const entityCache = new Map<string, string>();
   for (const item of items) {
     if (item.confidence < minConfidence) {
       report.skipped_low_confidence++;
@@ -265,7 +315,7 @@ export async function extractEpisode(
       text: item.text,
       kind: item.kind,
       tier: item.tier,
-      entity_refs: [],
+      entity_refs: await resolveEntityRefs(db, ctx, item.entities, entityCache),
       visibility: "private",
       valid_from: now(),
       valid_until: null,

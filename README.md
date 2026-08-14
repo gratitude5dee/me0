@@ -262,12 +262,12 @@ export ME0_LLM_API_KEY=sk-...                          # optional for local endp
 
 me0 extract --episode ep_abc123   # explicit one-episode extraction
 me0 extract --all                 # sweep recently-ended unextracted episodes
-me0 dream                         # dream cycle runs the same sweep when an LLM is configured
+me0 dream --extract               # dream cycle runs the same sweep (explicit flag: LLM spend is opt-in)
 ```
 
 Config keys (env overrides `~/.me0/config.json`): `ME0_LLM_BASE_URL`/`llm_base_url`, `ME0_LLM_MODEL`/`llm_model`, `ME0_LLM_API_KEY`/`llm_api_key`, `ME0_EXTRACT_ON_EPISODE_END`/`extract_on_episode_end` (auto-extract after `episode_end` via `me0 op`/`me0 hook session-end`), `ME0_EXTRACT_MIN_CONFIDENCE`/`extract_min_confidence` (default 0.5).
 
-Guarantees: **fail-open** — an LLM outage never blocks `episode_end` (errors go to stderr, the episode still ends); **honest abstention** — the model is instructed to output strict JSON and an empty array when nothing durable happened, malformed output is dropped, never retried into fabrication; **idempotent** — normalized-text dedupe (`create_safety=exists` semantics) makes re-extraction safe, and processed episodes are flagged `extracted_at` so sweeps don't re-run them; **clamped** — confidence clamped to [0,1], items below the threshold skipped, at most 12 items per episode, suggested tiers capped below `core`.
+Guarantees: **fail-open** — an LLM outage never blocks `episode_end` (errors go to stderr, the episode still ends); **honest abstention** — the model is instructed to output strict JSON and an empty array when nothing durable happened, malformed output is dropped, never retried into fabrication; **idempotent** — normalized-text dedupe (`create_safety=exists` semantics) makes re-extraction safe, and processed episodes are flagged `extracted_at` so sweeps don't re-run them; **clamped** — confidence clamped to [0,1], items below the threshold skipped, at most 12 items per episode, suggested tiers capped below `core`; **entity-linked** — extracted entity names resolve to (auto-created) entities and land in `entity_refs`; **bounded** — LLM requests time out after 30s so a stalled endpoint never hangs session end.
 
 ## 📊 me0-bench: falsifiable memory
 
