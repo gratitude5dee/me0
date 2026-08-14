@@ -218,6 +218,7 @@ export class KumoBackend implements PredictionBackend {
         .map((m) => m.memory_id)
         .toArray();
       const computedAt = new Date().toISOString();
+      // stale predictions are reaped natively by the ttl_expire_at TTL index
       const expireAt = new Date(Date.now() + PREDICTION_TTL_MS);
       const runMode = this.opts.runMode ?? "fast";
       const preds: PredictionDoc[] = [];
