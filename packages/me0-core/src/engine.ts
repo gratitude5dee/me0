@@ -4,6 +4,8 @@ import { type DreamReport, dream } from "./dream.js";
 import { maybeEmbedText } from "./embeddings.js";
 import { type PushResult, push } from "./push.js";
 import { hybridRecall } from "./retrieval.js";
+import { PURGE_WINDOW_MS } from "./store/mongo.js";
+import { logRetrievals } from "./store/telemetry.js";
 import type {
   CreateSafety,
   EntityDoc,
@@ -116,7 +118,8 @@ export class Me0Engine {
     // heuristic predictions, so only local surfacings are recorded
     if (!ctx.remote) {
       const ts = now();
-      await this.db.collection("retrievals").insertMany(
+      await logRetrievals(
+        this.db,
         scored.map((s, i) => ({
           ts,
           user_id: ctx.user_id,
@@ -387,7 +390,8 @@ export class Me0Engine {
     const surfacedIds = standing.map((m) => m.memory_id);
     if (!ctx.remote && surfacedIds.length > 0) {
       const ts = now();
-      await this.db.collection("retrievals").insertMany(
+      await logRetrievals(
+        this.db,
         surfacedIds.map((memory_id, i) => ({
           ts,
           user_id: ctx.user_id,
@@ -456,7 +460,7 @@ export class Me0Engine {
     if (args.memory_id) {
       const r = await memories.updateOne(
         { user_id: ctx.user_id, memory_id: args.memory_id },
-        { $set: { deleted_at: ts } },
+        { $set: { deleted_at: ts, purge_at: new Date(Date.now() + PURGE_WINDOW_MS) } },
       );
       count = r.modifiedCount;
       await this.audit(ctx, "forget", args.memory_id, "soft-delete (72h purge window)");
@@ -467,7 +471,7 @@ export class Me0Engine {
       if (ent) {
         const r = await memories.updateMany(
           { user_id: ctx.user_id, entity_refs: ent.entity_id },
-          { $set: { deleted_at: ts } },
+          { $set: { deleted_at: ts, purge_at: new Date(Date.now() + PURGE_WINDOW_MS) } },
         );
         count = r.modifiedCount;
         await this.audit(
@@ -688,7 +692,7 @@ export class Me0Engine {
   }
 
   async purgeExpired(): Promise<number> {
-    const cutoff = new Date(Date.now() - 72 * 3600 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - PURGE_WINDOW_MS).toISOString();
     const r = await this.db
       .collection("memories")
       .deleteMany({ deleted_at: { $ne: null, $lt: cutoff } });

@@ -1,5 +1,6 @@
 import type { Db } from "mongodb";
 import { hybridRecall } from "./retrieval.js";
+import { logRetrievals } from "./store/telemetry.js";
 import type { EpisodeDoc, OperationContext, UserDoc } from "./types.js";
 import { PROTOCOL_VERSION } from "./types.js";
 
@@ -59,7 +60,8 @@ export async function push(
       },
       { upsert: true },
     );
-    await db.collection("retrievals").insertMany(
+    await logRetrievals(
+      db,
       pushed.map((p, i) => ({
         ts,
         user_id: ctx.user_id,

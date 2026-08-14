@@ -1,3 +1,4 @@
+import { PREDICTION_TTL_MS } from "me0-core";
 import type { MemoryDoc, OperationContext } from "me0-core";
 import type { Db } from "mongodb";
 
@@ -9,6 +10,7 @@ export interface PredictionDoc {
   horizon: string;
   model: "kumo-rfm-2" | "heuristic";
   computed_at: string;
+  expire_at: Date;
 }
 
 export interface HeuristicReport {
@@ -35,6 +37,8 @@ function decay(lastRetrievedAt: string | null, validFrom: string, accessCount: n
  */
 export async function runHeuristics(db: Db, ctx: OperationContext): Promise<HeuristicReport> {
   const computedAt = new Date().toISOString();
+  // stale predictions are reaped natively by the ttl_expire_at TTL index
+  const expireAt = new Date(Date.now() + PREDICTION_TTL_MS);
   const memories = await db
     .collection<MemoryDoc>("memories")
     .find({ user_id: ctx.user_id, deleted_at: null, valid_until: null })
@@ -53,6 +57,16 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
     if (r.used === true) cur.used++;
     surfaced.set(r.memory_id as string, cur);
   }
+  // time-series retrievals are immutable: usage acknowledgements live in the
+  // plain retrieval_feedback side collection (see markRetrievalsUsed)
+  const feedback = await db
+    .collection("retrieval_feedback")
+    .find({ user_id: ctx.user_id, memory_id: { $in: memoryIds }, used: true })
+    .toArray();
+  for (const r of feedback) {
+    const cur = surfaced.get(r.memory_id as string);
+    if (cur) cur.used++;
+  }
 
   const preds: PredictionDoc[] = [];
   for (const m of memories) {
@@ -69,6 +83,7 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
         horizon: "7d",
         model: "heuristic",
         computed_at: computedAt,
+        expire_at: expireAt,
       });
     }
     // prefetch: recency x frequency
@@ -82,6 +97,7 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
         horizon: "24h",
         model: "heuristic",
         computed_at: computedAt,
+        expire_at: expireAt,
       });
     }
     // forget: Ebbinghaus decay — high score = safe to demote/archive
@@ -93,11 +109,13 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
       horizon: "90d",
       model: "heuristic",
       computed_at: computedAt,
+      expire_at: expireAt,
     });
   }
 
-  // replace prior heuristic predictions for all of the user's memories,
-  // including deleted/superseded ones so stale scores don't accumulate
+  // replace ALL prior predictions (any model) for the user's memories,
+  // including deleted/superseded ones, so exactly one score exists per
+  // (memory, task) and retrieval ranking stays deterministic
   const allIds = await db
     .collection<MemoryDoc>("memories")
     .find({ user_id: ctx.user_id })
@@ -109,7 +127,6 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
     await col.deleteMany({
       subject_type: "memory",
       subject_id: { $in: allIds },
-      model: "heuristic",
     });
   }
   if (preds.length > 0) await col.insertMany(preds);
