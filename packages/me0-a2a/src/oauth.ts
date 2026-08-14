@@ -41,7 +41,12 @@ function parseScopes(payload: JWTPayload): Set<string> {
 const DISCOVERY_TIMEOUT_MS = 5_000;
 
 function isLoopbackHost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  return (
+    hostname === "localhost" ||
+    hostname === "[::1]" ||
+    hostname === "::1" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
 }
 
 /** issuer-controlled URLs must be https (loopback exempt for local development) */
@@ -86,13 +91,16 @@ async function discoverIssuerMetadata(issuer: string): Promise<IssuerMetadata> {
       }
       if (typeof meta.jwks_uri === "string" && meta.jwks_uri) {
         assertSafeUrl(meta.jwks_uri, "jwks_uri");
-        return {
-          jwksUri: meta.jwks_uri,
-          tokenEndpoint:
-            typeof meta.token_endpoint === "string" && meta.token_endpoint
-              ? meta.token_endpoint
-              : undefined,
-        };
+        let tokenEndpoint: string | undefined;
+        if (typeof meta.token_endpoint === "string" && meta.token_endpoint) {
+          try {
+            assertSafeUrl(meta.token_endpoint, "token_endpoint");
+            tokenEndpoint = meta.token_endpoint;
+          } catch {
+            // never advertise an unsafe token endpoint, but keep the jwks_uri
+          }
+        }
+        return { jwksUri: meta.jwks_uri, tokenEndpoint };
       }
     } catch {
       // try the next well-known location
@@ -100,6 +108,8 @@ async function discoverIssuerMetadata(issuer: string): Promise<IssuerMetadata> {
   }
   throw new Error(`could not discover jwks_uri from issuer ${issuer}`);
 }
+
+const DISCOVERY_FAILURE_TTL_MS = 30_000;
 
 /**
  * Validates OAuth 2.1 Bearer JWT access tokens (resource-server role).
@@ -110,14 +120,33 @@ async function discoverIssuerMetadata(issuer: string): Promise<IssuerMetadata> {
 export class OAuthVerifier {
   private jwks?: ReturnType<typeof createRemoteJWKSet>;
   private metadata?: IssuerMetadata;
+  private pendingDiscovery?: Promise<IssuerMetadata>;
+  private discoveryFailedAt = 0;
 
   constructor(private readonly opts: A2AOAuthOptions) {}
 
+  /**
+   * Successful discovery is cached forever; failures are negative-cached for
+   * a short TTL and concurrent lookups share one in-flight fetch, so anonymous
+   * agent-card requests cannot amplify outbound traffic toward the issuer.
+   */
   private async getMetadata(): Promise<IssuerMetadata> {
-    if (!this.metadata) {
-      this.metadata = await discoverIssuerMetadata(this.opts.issuer);
+    if (this.metadata) return this.metadata;
+    if (Date.now() - this.discoveryFailedAt < DISCOVERY_FAILURE_TTL_MS) {
+      throw new Error("issuer metadata discovery recently failed");
     }
-    return this.metadata;
+    if (!this.pendingDiscovery) {
+      this.pendingDiscovery = discoverIssuerMetadata(this.opts.issuer);
+    }
+    try {
+      this.metadata = await this.pendingDiscovery;
+      return this.metadata;
+    } catch (err) {
+      this.discoveryFailedAt = Date.now();
+      throw err;
+    } finally {
+      this.pendingDiscovery = undefined;
+    }
   }
 
   private async getJwks(): Promise<ReturnType<typeof createRemoteJWKSet>> {
@@ -140,8 +169,8 @@ export class OAuthVerifier {
    * (never guessed).
    */
   async tokenEndpoint(): Promise<string | null> {
-    if (this.opts.tokenUrl) return this.opts.tokenUrl;
     try {
+      if (this.opts.tokenUrl) return assertSafeUrl(this.opts.tokenUrl, "token_url").href;
       return (await this.getMetadata()).tokenEndpoint ?? null;
     } catch {
       return null;
