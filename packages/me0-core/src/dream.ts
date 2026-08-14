@@ -1,4 +1,5 @@
 import type { Db } from "mongodb";
+import { PURGE_WINDOW_MS } from "./store/mongo.js";
 import type { MemoryDoc, OperationContext, UserDoc } from "./types.js";
 import { PROTOCOL_VERSION } from "./types.js";
 
@@ -32,8 +33,8 @@ export async function dream(db: Db, ctx: OperationContext): Promise<DreamReport>
   const memories = db.collection<MemoryDoc>("memories");
   const ts = now();
 
-  // 1. purge expired soft-deletes
-  const purgeCutoff = new Date(Date.now() - 72 * 3600 * 1000).toISOString();
+  // 1. purge expired soft-deletes (fallback for the native TTL index on purge_at)
+  const purgeCutoff = new Date(Date.now() - PURGE_WINDOW_MS).toISOString();
   const purge = await memories.deleteMany({
     user_id: ctx.user_id,
     deleted_at: { $ne: null, $lt: purgeCutoff },

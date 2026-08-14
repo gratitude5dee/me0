@@ -93,6 +93,7 @@ export const validators: Record<string, Document> = {
         confidence: { bsonType: ["double", "int"], minimum: 0, maximum: 1 },
         notability: { bsonType: ["double", "int"], minimum: 0, maximum: 1 },
         deleted_at: { bsonType: ["string", "null"] },
+        purge_at: { bsonType: ["date", "null"] },
         prov,
       },
     },

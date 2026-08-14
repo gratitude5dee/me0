@@ -132,6 +132,21 @@ me0 doesn't sit *next to* a database — the memory semantics are built out of M
 | Live consolidation | Change streams triggering dream steps on write |
 | Sealed memories | Queryable Encryption for a never-shared tier |
 
+### Mongo-native storage: TTL, time-series, change streams
+
+Three Mongo-native features harden the storage layer (all work on local `mongo:8`, no Atlas needed):
+
+- **TTL purging** — `forget` stamps soft-deleted memories with a `purge_at` Date; a TTL index (`{purge_at: 1}`, `expireAfterSeconds: 0`) hard-purges them natively after the 72h window (dream's purge remains as a fallback). RFM heuristic predictions carry an `expire_at` Date with their own TTL index. Schema migration is idempotent: re-running `me0 init` on an existing database is a no-op, and option conflicts on me0-owned index names are resolved by drop/recreate.
+- **Time-series telemetry** — on a fresh database, `retrievals` is created as a time-series collection (`timeField: ts`, `metaField: {user_id, op}`). Existing plain collections are kept as-is (never destructively migrated); `me0 doctor` reports the collection type and the upgrade path. Usage acknowledgements for time-series rows land in the plain `retrieval_feedback` side collection via `markRetrievalsUsed()`.
+- **Change streams** — `me0 watch [--kind <kind>] [--tier <tier>]` (backed by the exported `watchMemories()` helper) tails live memory changes for your user and prints JSONL events — the substrate for live-sync between harnesses. Change streams require a replica set; on a standalone server `me0 watch` exits 1 with setup instructions:
+
+```bash
+docker run -d --name me0-mongo -p 127.0.0.1:27017:27017 mongo:8 --replSet rs0
+docker exec me0-mongo mongosh --eval "rs.initiate()"
+```
+
+`me0 doctor` reports TTL indexes, the telemetry collection type, and change-stream capability.
+
 ## ⚡ Quickstart (60 seconds)
 
 ```bash

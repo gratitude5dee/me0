@@ -7,4 +7,6 @@ export * from "./push.js";
 export * from "./retrieval.js";
 export * from "./schema/validators.js";
 export * from "./store/mongo.js";
+export * from "./store/telemetry.js";
 export * from "./types.js";
+export * from "./watch.js";
