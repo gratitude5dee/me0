@@ -5,20 +5,27 @@ import { dirname, join } from "node:path";
 import { startA2AServer } from "me0-a2a";
 import {
   Me0Engine,
+  type MemoryKind,
+  type MemoryTier,
   type OperationContext,
   type Store,
+  TTL_INDEXES,
   connect,
   discoverContextFiles,
   embedBackfill,
   ensureCollections,
+  formatMemoryChange,
   getEmbedder,
   importClaudeDir,
   importContextFiles,
   importDevinSession,
   invoke,
+  isReplicaSet,
   operations,
   supportsNativeRankFusion,
+  telemetryCollectionType,
   vectorSearchIndex,
+  watchMemories,
 } from "me0-core";
 import { exportTables, runHeuristics, runPredictions } from "me0-rfm";
 import { configDir, loadConfig, saveConfig } from "./config.js";
@@ -65,6 +72,8 @@ commands:
             bearer token; --url sets the endpoint advertised on the agent card)
   op        invoke any verb directly: me0 op <name> '<json-args>'
   hook      harness hook entrypoint: me0 hook <session-start|prompt|session-end> [json]
+  watch     tail live memory changes as JSONL via change streams (requires a
+            replica set): me0 watch [--kind <kind>] [--tier <tier>]
 
 flags:
   --uri <mongodb-uri>   override MongoDB URI
@@ -199,6 +208,31 @@ async function cmdDoctor(args: string[]) {
       ? "codex: wired"
       : "codex: not wired",
   );
+  try {
+    await withEngine(uri, async (_engine, db) => {
+      const telType = await telemetryCollectionType(db);
+      console.log(
+        telType === "timeseries"
+          ? "retrievals: time-series collection"
+          : `retrievals: ${telType} collection — upgrade path: drop the retrievals collection and re-run \`me0 init\` to recreate it as time-series (telemetry history is NOT preserved: \`me0 export\` does not cover retrievals)`,
+      );
+      for (const idx of TTL_INDEXES) {
+        const names = (await db.collection(idx.collection).indexes()).map((i) => i.name);
+        console.log(
+          names.includes(idx.name)
+            ? `ttl index ${idx.collection}.${idx.name}: present`
+            : `ttl index ${idx.collection}.${idx.name}: MISSING — run \`me0 init\``,
+        );
+      }
+      console.log(
+        (await isReplicaSet(db))
+          ? "change streams: available (replica set)"
+          : "change streams: unavailable (standalone mongod — restart with --replSet rs0 and run rs.initiate())",
+      );
+    });
+  } catch {
+    // storage diagnostics already reported above
+  }
   const openclawConfig = join(openclawDir(), "openclaw.json");
   console.log(
     existsSync(openclawConfig) && readFileSync(openclawConfig, "utf-8").includes('"me0"')
@@ -597,6 +631,42 @@ async function cmdExtract(args: string[]) {
   });
 }
 
+async function cmdWatch(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const kind = flag(args, "--kind") as MemoryKind | undefined;
+  const tier = flag(args, "--tier") as MemoryTier | undefined;
+  const store = await connect(uri);
+  try {
+    if (!(await isReplicaSet(store.db))) {
+      console.error(
+        "me0 watch: change streams require a replica set, but this server is standalone.\n" +
+          "Run MongoDB as a single-node replica set:\n" +
+          "  docker run -d --name me0-mongo -p 127.0.0.1:27017:27017 mongo:8 --replSet rs0\n" +
+          '  docker exec me0-mongo mongosh --eval "rs.initiate()"',
+      );
+      await store.close();
+      process.exit(1);
+    }
+    await ensureCollections(store.db);
+    const stream = watchMemories(store.db, userId, { kind, tier });
+    const stop = async () => {
+      await stream.close();
+      await store.close();
+      process.exit(0);
+    };
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+    console.error(`watching memories for ${userId} (ctrl-c to stop)`);
+    for await (const change of stream) {
+      console.log(JSON.stringify(formatMemoryChange(change)));
+    }
+  } finally {
+    await store.close();
+  }
+}
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -729,6 +799,8 @@ async function main() {
       return cmdOp(args);
     case "hook":
       return cmdHook(args);
+    case "watch":
+      return cmdWatch(args);
     default:
       console.log(HELP);
       process.exit(cmd ? 1 : 0);

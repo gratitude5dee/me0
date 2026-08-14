@@ -2,7 +2,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Me0Engine, type OperationContext, type Store, connect, ensureCollections } from "me0-core";
+import {
+  Me0Engine,
+  type OperationContext,
+  type Store,
+  connect,
+  ensureCollections,
+  markRetrievalsUsed,
+} from "me0-core";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { exportTables, runHeuristics } from "../src/index.js";
 
@@ -41,9 +48,7 @@ beforeAll(async () => {
   await engine.episodeEnd(ctx, { episode_id: ep.episode_id, summary: "done", success: true });
   // generate retrieval telemetry
   await engine.recall(ctx, { query: "conventional commits" });
-  await store.db
-    .collection("retrievals")
-    .updateMany({ user_id: ctx.user_id }, { $set: { used: true } });
+  await markRetrievalsUsed(store.db, ctx.user_id);
 });
 
 afterAll(async () => {

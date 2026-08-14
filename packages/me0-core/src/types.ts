@@ -80,6 +80,8 @@ export interface MemoryDoc {
   notability: number;
   access: { count: number; last_retrieved_at: string | null };
   deleted_at: string | null;
+  /** BSON Date set on soft-delete; the ttl_purge_at TTL index hard-purges on it */
+  purge_at?: Date | null;
   prov: Provenance;
   embedding?: number[];
   embedding_model?: string;
