@@ -10,6 +10,7 @@ import {
   discoverContextFiles,
   importContextFile,
 } from "../src/importers/context.js";
+import { importDevinSession } from "../src/importers/devin.js";
 import { classifyKind, normalizeText, parseMarkdown } from "../src/importers/markdown.js";
 import { type Store, connect, ensureCollections } from "../src/store/mongo.js";
 import type { OperationContext } from "../src/types.js";
@@ -178,5 +179,52 @@ describe("import-claude", () => {
     const r = await importClaudeDir(engine, db, ctx, join(FIXTURES, "does-not-exist"));
     expect(r.memories_added).toBe(0);
     expect(r.transcripts).toHaveLength(0);
+  });
+});
+
+describe("import-devin", () => {
+  const DEVIN_JSON = join(FIXTURES, "devin-session.json");
+
+  test("imports a session export as episode + mapped events", async () => {
+    const r = await importDevinSession(engine, db, ctx, DEVIN_JSON);
+    expect(r.action).toBe("ADD");
+    expect(r.session_id).toBe("devin-fixture123");
+    // prompt, response, command started, command completed, one file_edit (writes only)
+    expect(r.events).toBe(5);
+
+    const ep = await db
+      .collection("episodes")
+      .findOne({ user_id: ctx.user_id, episode_id: r.episode_id });
+    expect(ep?.harness).toBe("devin");
+    expect(ep?.title).toBe("Fix the login bug");
+    expect(ep?.started_at).toBe("2026-08-13T22:28:54Z");
+
+    const events = await db.collection("events").find({ episode_id: r.episode_id }).toArray();
+    expect(events.map((e) => e.type).sort()).toEqual([
+      "command",
+      "command",
+      "file_edit",
+      "prompt",
+      "response",
+    ]);
+    const edit = events.find((e) => e.type === "file_edit");
+    expect(edit?.payload.files).toEqual(["/repo/src/auth.ts"]);
+    const done = events.find((e) => e.type === "command" && e.ok !== null);
+    expect(done?.ok).toBe(true);
+  });
+
+  test("re-import is a NOOP keyed on session id", async () => {
+    const r = await importDevinSession(engine, db, ctx, DEVIN_JSON);
+    expect(r.action).toBe("NOOP");
+    expect(r.events).toBe(0);
+  });
+
+  test("rejects remote callers and malformed exports", async () => {
+    await expect(
+      importDevinSession(engine, db, { ...ctx, remote: true }, DEVIN_JSON),
+    ).rejects.toThrow("local-only");
+    await expect(importDevinSession(engine, db, ctx, CLAUDE_MD)).rejects.toThrow(
+      "not a valid Devin session export",
+    );
   });
 });

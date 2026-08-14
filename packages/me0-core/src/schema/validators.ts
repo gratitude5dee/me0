@@ -5,7 +5,7 @@ const prov: Document = {
   required: ["harness", "agent", "method", "confidence", "extracted_at"],
   properties: {
     episode_id: { bsonType: ["string", "null"] },
-    harness: { enum: ["claude-code", "codex", "pi", "hermes", "openclaw", "other"] },
+    harness: { enum: ["claude-code", "codex", "pi", "hermes", "openclaw", "devin", "other"] },
     agent: { bsonType: "string" },
     method: { enum: ["deterministic", "llm", "user"] },
     confidence: { bsonType: ["double", "int"], minimum: 0, maximum: 1 },
@@ -104,7 +104,7 @@ export const validators: Record<string, Document> = {
       properties: {
         user_id: { bsonType: "string" },
         episode_id: { bsonType: "string" },
-        harness: { enum: ["claude-code", "codex", "pi", "hermes", "openclaw", "other"] },
+        harness: { enum: ["claude-code", "codex", "pi", "hermes", "openclaw", "devin", "other"] },
         started_at: { bsonType: "string" },
         ended_at: { bsonType: ["string", "null"] },
         status: { enum: ["active", "ended", "handed_off"] },

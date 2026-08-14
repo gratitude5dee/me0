@@ -131,7 +131,7 @@ export const operations: Operation[] = [
       properties: {
         harness: {
           type: "string",
-          enum: ["claude-code", "codex", "pi", "hermes", "openclaw", "other"],
+          enum: ["claude-code", "codex", "pi", "hermes", "openclaw", "devin", "other"],
         },
         agent_name: str,
         model: str,

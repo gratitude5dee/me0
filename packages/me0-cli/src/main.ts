@@ -12,6 +12,7 @@ import {
   ensureCollections,
   importClaudeDir,
   importContextFiles,
+  importDevinSession,
   invoke,
   operations,
 } from "me0-core";
@@ -39,6 +40,8 @@ commands:
   import-context  backfill CLAUDE.md/AGENTS.md/MEMORY.md/USER.md/SOUL.md into memories
   import-claude   backfill ~/.claude auto-memory + session transcripts (--dir to override)
   import-openclaw  backfill an OpenClaw workspace (MEMORY.md, memory/*.md, USER.md, SOUL.md) [--dir <workspace>]
+  import-devin    backfill a Devin session export (JSON) as an episode: --in <file>
+                  (export shape: { session_id, title, events: [...] } from the Devin session-events API)
   dream     consolidation pass: purge, dedupe, decay tiers, recompile cards, refresh packs
             (--rfm also scores predictions: heuristic prefetch/forget/retrieval-utility)
   rfm       predictive layer: export flat tables (--out <dir>, --no-redact) + write heuristic
@@ -369,6 +372,25 @@ async function cmdImportClaude(args: string[]) {
   });
 }
 
+async function cmdImportDevin(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const file = flag(args, "--in");
+  if (!file || !existsSync(file)) {
+    console.error(`usage: me0 import-devin --in <session-export.json> (file not found: ${file})`);
+    process.exit(1);
+  }
+  await withEngine(uri, async (engine, db) => {
+    const r = await importDevinSession(engine, db, ctxFor(userId), file);
+    console.log(
+      r.action === "ADD"
+        ? `${r.session_id}: +1 episode (${r.episode_id}), +${r.events} events`
+        : `${r.session_id}: already imported as ${r.episode_id} (NOOP)`,
+    );
+  });
+}
+
 async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
@@ -555,6 +577,8 @@ async function main() {
       return cmdImportClaude(args);
     case "import-openclaw":
       return cmdImportOpenClaw(args);
+    case "import-devin":
+      return cmdImportDevin(args);
     case "dream":
       return cmdDream(args);
     case "rfm":
