@@ -40,6 +40,12 @@ description: How to run and end-to-end test the me0 memory layer (CLI, MCP serve
 - `me0 hook prompt '{"prompt":"...","episode_id":"ep_..."}'` emits UserPromptSubmit `<me0-push>` JSON only when a matching memory clears the 0.7 confidence gate (seed one via `me0 op remember` first); `me0 hook session-end '{"episode_id":...,"summary":...,"success":true}'` ends the episode.
 - `me0 op episode_log` requires `episode_id` in the JSON args — the `ME0_EPISODE_ID` env var is NOT used as an arg default.
 
+## Mongo-native features (PR #20+): TTL, time-series, change streams
+- Fresh `me0 init` creates TTL indexes (`ttl_purge_at` on memories.purge_at, `ttl_expire_at` on predictions.expire_at, both expireAfterSeconds:0) and `retrievals` as a time-series collection (timeField `ts`, metaField `meta`). Verify via `docker exec me0-mongo mongosh me0 --quiet --eval 'db.getCollectionInfos({name:"retrievals"})'`. An existing plain `retrievals` is kept as-is; `me0 doctor` prints the upgrade path.
+- Telemetry rows only appear after a recall/pack that actually surfaces memories — an empty recall writes nothing, so seed a memory first.
+- `me0 watch` needs a replica set. Standalone → exit 1 with setup instructions. Test setup: `docker run -d --name me0-mongo-rs -p 127.0.0.1:27018:27017 mongo:8 --replSet rs0`, then `docker exec me0-mongo-rs mongosh --quiet --eval 'rs.initiate()'`, and init/connect with `mongodb://127.0.0.1:27018/?directConnection=true` (directConnection is required — the rs advertises its container hostname). Background `me0 watch > out.jsonl` and drive events from another shell; `--kind`/`--tier`/`--user` filter events.
+- `me0 op <name>` requires the JSON to be the argument immediately after the op name; flags like `--user` must come AFTER the JSON (`me0 op remember '{...}' --user x`), otherwise the JSON is silently dropped and `{}` is used.
+
 ## Gotchas
 - README quickstart's root-level `bun link @wzrdtech/me0 && bun link @wzrdtech/me0-mcp` fails on a fresh clone ("Package is not linked") — you must run bare `bun link` inside each package dir first. Also, root-level `bun link <name>` mutates the root package.json (adds `link:` deps) — restore with git checkout if dirtied.
 - Since the npm-publish rename (package `me0-cli` → `@wzrdtech/me0`, bin → `dist/main.js`), run `bun run build` inside each package before linking — the bins point at `dist/`. Stale bun links from older checkouts can hang silently: `rm ~/.bun/bin/me0*` and re-link.
