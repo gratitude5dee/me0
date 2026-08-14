@@ -184,11 +184,24 @@ describe("embed-backfill", () => {
       },
     });
     const report = await embedBackfill(db, ctx.user_id, { batchSize: 1 });
-    // a zero-progress batch stops the run: no repeat provider calls
+    // the memory_id cursor visits each doc exactly once, then terminates
     expect(report.embedded).toBe(0);
-    expect(report.failed).toBe(1);
-    expect(report.scanned).toBe(1);
+    expect(report.failed).toBe(2);
+    expect(report.scanned).toBe(2);
     expect(report.remaining).toBe(2);
+  });
+
+  test("re-embeds memories whose vectors came from a different model", async () => {
+    setEmbedder(fakeEmbedder("old-model"));
+    await engine.remember(ctx, { text: "espresso machine descaling", kind: "fact" });
+    setEmbedder(fakeEmbedder("new-model"));
+    const report = await embedBackfill(db, ctx.user_id);
+    expect(report.embedded).toBe(1);
+    expect(report.remaining).toBe(0);
+    const doc = await db
+      .collection<MemoryDoc>("memories")
+      .findOne({ user_id: ctx.user_id, text: "espresso machine descaling" });
+    expect(doc?.embedding_model).toBe("new-model");
   });
 });
 

@@ -6,6 +6,7 @@ import {
   StdioClientTransport,
   getDefaultEnvironment,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { PREDICTION_TTL_MS } from "me0-core";
 import type { MemoryDoc, OperationContext } from "me0-core";
 import type { Db } from "mongodb";
 import type { PredictionBackend, PredictionReport } from "./backend.js";
@@ -217,6 +218,7 @@ export class KumoBackend implements PredictionBackend {
         .map((m) => m.memory_id)
         .toArray();
       const computedAt = new Date().toISOString();
+      const expireAt = new Date(Date.now() + PREDICTION_TTL_MS);
       const runMode = this.opts.runMode ?? "fast";
       const preds: PredictionDoc[] = [];
 
@@ -242,6 +244,7 @@ export class KumoBackend implements PredictionBackend {
               horizon,
               model: "kumo-rfm-2",
               computed_at: computedAt,
+              expire_at: expireAt,
             });
           }
         }
@@ -263,6 +266,7 @@ export class KumoBackend implements PredictionBackend {
           horizon: "24h",
           model: "kumo-rfm-2",
           computed_at: computedAt,
+          expire_at: expireAt,
         });
       }
 

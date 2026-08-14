@@ -2,7 +2,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Me0Engine, type OperationContext, type Store, connect, ensureCollections } from "me0-core";
+import {
+  Me0Engine,
+  type OperationContext,
+  type Store,
+  connect,
+  ensureCollections,
+  markRetrievalsUsed,
+} from "me0-core";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import {
   KumoBackend,
@@ -49,9 +56,7 @@ beforeAll(async () => {
   await engine.episodeLog(ctx, { episode_id: ep.episode_id, type: "tool_call", tool: "bash" });
   await engine.episodeEnd(ctx, { episode_id: ep.episode_id, summary: "done", success: true });
   await engine.recall(ctx, { query: "conventional commits" });
-  await store.db
-    .collection("retrievals")
-    .updateMany({ user_id: ctx.user_id }, { $set: { used: true } });
+  await markRetrievalsUsed(store.db, ctx.user_id);
 });
 
 afterAll(async () => {
