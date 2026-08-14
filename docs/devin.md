@@ -19,7 +19,7 @@ available:
 initialize: |
   docker pull mongo:8
 maintenance: |
-  npm i -g @8gratitude8/me0 me0-mcp
+  npm i -g @wzrdtech/me0 @wzrdtech/me0-mcp
 knowledge:
   - name: me0
     contents: |

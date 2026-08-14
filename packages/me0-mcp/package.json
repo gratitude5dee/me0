@@ -1,5 +1,5 @@
 {
-  "name": "me0-mcp",
+  "name": "@wzrdtech/me0-mcp",
   "version": "0.1.0",
   "description": "me0 stdio MCP server — expose the me0 memory verbs to any MCP client",
   "type": "module",

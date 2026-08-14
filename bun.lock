@@ -40,7 +40,7 @@
       },
     },
     "packages/me0-cli": {
-      "name": "@8gratitude8/me0",
+      "name": "@wzrdtech/me0",
       "version": "0.1.0",
       "bin": {
         "me0": "dist/main.js",
@@ -68,7 +68,7 @@
       },
     },
     "packages/me0-mcp": {
-      "name": "me0-mcp",
+      "name": "@wzrdtech/me0-mcp",
       "version": "0.1.0",
       "bin": {
         "me0-mcp": "dist/server.js",
@@ -107,8 +107,6 @@
     },
   },
   "packages": {
-    "@8gratitude8/me0": ["@8gratitude8/me0@workspace:packages/me0-cli"],
-
     "@biomejs/biome": ["@biomejs/biome@1.9.4", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "1.9.4", "@biomejs/cli-darwin-x64": "1.9.4", "@biomejs/cli-linux-arm64": "1.9.4", "@biomejs/cli-linux-arm64-musl": "1.9.4", "@biomejs/cli-linux-x64": "1.9.4", "@biomejs/cli-linux-x64-musl": "1.9.4", "@biomejs/cli-win32-arm64": "1.9.4", "@biomejs/cli-win32-x64": "1.9.4" }, "bin": { "biome": "bin/biome" } }, "sha512-1rkd7G70+o9KkTn5KLmDYXihGoTaIGO9PIIN2ZB7UJxFrWw04CZHPYiMRjYsaDvVV7hP1dYNRLxSANLaBFGpog=="],
 
     "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@1.9.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-bFBsPWrNvkdKrNCYeAp+xo2HecOGPAy9WyNyB/jKnnedgzl4W4Hb9ZMzYNbf8dMCGmUdSavlYHiR01QaYR58cw=="],
@@ -138,6 +136,10 @@
     "@types/webidl-conversions": ["@types/webidl-conversions@7.0.3", "", {}, "sha512-CiJJvcRtIgzadHCYXw7dqEnMNRjhGZlYK05Mj9OyktqV8uVT8fD2BFOB7S1uwBE3Kj2Z+4UyPmFw/Ixgw/LAlA=="],
 
     "@types/whatwg-url": ["@types/whatwg-url@11.0.5", "", { "dependencies": { "@types/webidl-conversions": "*" } }, "sha512-coYR071JRaHa+xoEvvYqvnIHaVqaYrLPbsufM9BF63HkwI5Lgmy2QR8Q5K/lYDYo5AK82wOvSOS0UsLTpTG7uQ=="],
+
+    "@wzrdtech/me0": ["@wzrdtech/me0@workspace:packages/me0-cli"],
+
+    "@wzrdtech/me0-mcp": ["@wzrdtech/me0-mcp@workspace:packages/me0-mcp"],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
 
@@ -284,8 +286,6 @@
     "me0-bench": ["me0-bench@workspace:packages/me0-bench"],
 
     "me0-core": ["me0-core@workspace:packages/me0-core"],
-
-    "me0-mcp": ["me0-mcp@workspace:packages/me0-mcp"],
 
     "me0-openclaw": ["me0-openclaw@workspace:packages/me0-openclaw"],
 
