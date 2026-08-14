@@ -125,6 +125,13 @@ beforeAll(async () => {
       if (path === "/insecure/.well-known/oauth-authorization-server") {
         return Response.json({ issuer: `${origin}/insecure`, jwks_uri: "http://evil.test/jwks" });
       }
+      if (path === "/insecure-token/.well-known/oauth-authorization-server") {
+        return Response.json({
+          issuer: `${origin}/insecure-token`,
+          jwks_uri: jwksUri,
+          token_endpoint: "http://evil.test/oauth/token",
+        });
+      }
       return new Response("not found", { status: 404 });
     },
   });
@@ -359,6 +366,24 @@ describe("a2a oauth", () => {
     expect(card.securitySchemes.oauth2?.flows?.clientCredentials?.tokenUrl).toBe(
       `${issuer}/oauth/token`,
     );
+  });
+
+  test("insecure discovered token_endpoint is rejected (flow omitted, auth fails closed)", async () => {
+    const issuer = `http://127.0.0.1:${jwksServer.port}/insecure-token`;
+    const opts = freshOpts();
+    if (opts.oauth) {
+      opts.oauth.issuer = issuer;
+      opts.oauth.jwksUri = undefined;
+    }
+    const res = await handleA2ARequest(
+      store.db,
+      opts,
+      new Request("http://localhost:4160/.well-known/agent-card.json"),
+    );
+    const card = (await res.json()) as {
+      securitySchemes: { oauth2?: { flows?: Record<string, unknown> } };
+    };
+    expect(card.securitySchemes.oauth2?.flows).toEqual({});
   });
 
   test("agent card omits the token flow when no endpoint is known", async () => {
