@@ -137,7 +137,8 @@ me0 doesn't sit *next to* a database — the memory semantics are built out of M
 ```bash
 git clone https://github.com/gratitude5dee/me0 && cd me0
 bun install
-bun link me0-cli && bun link me0-mcp
+(cd packages/me0-cli && bun link) && (cd packages/me0-mcp && bun link)   # register the binaries
+bun link me0-cli && bun link me0-mcp                                     # put `me0` + `me0-mcp` on PATH
 
 # storage: any MongoDB — local Docker is the free floor
 docker run -d --name me0-mongo -p 27017:27017 mongo:8
@@ -207,7 +208,10 @@ me0 import-claude             # Claude Code auto-memory + .jsonl transcripts →
 me0 import-pi                 # ~/.pi/agent/sessions/**/*.jsonl → episodes + events
 me0 import-openclaw           # MEMORY.md→facts · USER.md→preferences · SOUL.md→beliefs · daily logs→episodes
 me0 import-hermes             # Hermes state.db sessions + memories/*.md → episodes + memories
+me0 import-devin --in <file>  # Devin session export (JSON from the session-events API) → episode + events
 ```
+
+Using Devin? See [docs/devin.md](docs/devin.md) for wiring me0 into Devin's environment and exporting/ingesting Devin session logs.
 
 Headings become concept entities; `prefer/always/never` → preference, `decided` → decision, imperative how-tos → procedure, else fact. Everything lands with `method: "deterministic"` provenance and normalized-text dedupe — re-import never duplicates.
 

@@ -1,0 +1,64 @@
+{
+  "session_id": "devin-fixture123",
+  "title": "Fix the login bug",
+  "events": [
+    {
+      "event_id": "event-1",
+      "type": "initial_user_message",
+      "category": "message",
+      "created_at": "2026-08-13T22:28:54Z",
+      "contents": { "type": "initial_user_message", "message": "please fix the login bug" }
+    },
+    {
+      "event_id": "event-2",
+      "type": "devin_message",
+      "category": "message",
+      "created_at": "2026-08-13T22:29:12Z",
+      "contents": { "type": "devin_message", "message": "On it — investigating the auth flow." }
+    },
+    {
+      "event_id": "event-3",
+      "type": "shell_process_started",
+      "category": "shell",
+      "created_at": "2026-08-13T22:29:29Z",
+      "contents": { "type": "shell_process_started", "command": "bun test auth" }
+    },
+    {
+      "event_id": "event-4",
+      "type": "shell_process_completed",
+      "category": "shell",
+      "created_at": "2026-08-13T22:29:31Z",
+      "contents": { "type": "shell_process_completed", "exit_code": "0", "output_trunc": "3 pass" }
+    },
+    {
+      "event_id": "event-5",
+      "type": "multi_edit_result",
+      "category": "file",
+      "created_at": "2026-08-13T22:30:00Z",
+      "contents": {
+        "type": "multi_edit_result",
+        "file_updates": [
+          { "file_path": "/repo/src/auth.ts", "action_type": "edit" },
+          { "file_path": "/repo/readme.md", "action_type": "open" }
+        ]
+      }
+    },
+    {
+      "event_id": "event-6",
+      "type": "multi_edit_result",
+      "category": "file",
+      "created_at": "2026-08-13T22:30:05Z",
+      "contents": {
+        "type": "multi_edit_result",
+        "file_updates": [{ "file_path": "/repo/readme.md", "action_type": "open" }]
+      }
+    },
+    {
+      "event_id": "event-7",
+      "type": "simple_activity_update",
+      "category": "status",
+      "created_at": "2026-08-13T22:30:10Z",
+      "contents": { "type": "simple_activity_update" }
+    }
+  ]
+}

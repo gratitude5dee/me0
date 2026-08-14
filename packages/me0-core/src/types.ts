@@ -1,6 +1,6 @@
 export const PROTOCOL_VERSION = 1;
 
-export type Harness = "claude-code" | "codex" | "pi" | "hermes" | "openclaw" | "other";
+export type Harness = "claude-code" | "codex" | "pi" | "hermes" | "openclaw" | "devin" | "other";
 export type Visibility = "private" | "shared" | "world";
 export type MemoryKind = "fact" | "preference" | "decision" | "commitment" | "belief" | "procedure";
 export type MemoryTier = "core" | "standing" | "recall" | "archive";
