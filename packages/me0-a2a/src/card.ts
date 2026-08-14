@@ -1,8 +1,12 @@
+import { A2A_SCOPES, SCOPE_RECALL } from "./oauth.js";
+
 export const MEMORY_PROFILE_EXTENSION_URI = "https://me0.dev/a2a/ext/memory-profile/v1";
 
 export interface AgentCardOptions {
   url: string;
   auth: "bearer" | "none";
+  /** advertise an OAuth 2.1 security scheme alongside (or instead of) the static token */
+  oauth?: { issuer: string };
 }
 
 /** A2A v1 Agent Card served at /.well-known/agent-card.json */
@@ -27,8 +31,27 @@ export function buildAgentCard(opts: AgentCardOptions) {
         },
       ],
     },
-    securitySchemes: opts.auth === "bearer" ? { bearer: { type: "http", scheme: "bearer" } } : {},
-    security: opts.auth === "bearer" ? [{ bearer: [] }] : [],
+    securitySchemes: {
+      ...(opts.auth === "bearer" ? { bearer: { type: "http", scheme: "bearer" } } : {}),
+      ...(opts.oauth
+        ? {
+            oauth2: {
+              type: "oauth2",
+              description: `OAuth 2.1 Bearer JWT access tokens issued by ${opts.oauth.issuer}`,
+              flows: {
+                clientCredentials: {
+                  tokenUrl: `${opts.oauth.issuer.replace(/\/$/, "")}/token`,
+                  scopes: A2A_SCOPES,
+                },
+              },
+            },
+          }
+        : {}),
+    },
+    security: [
+      ...(opts.auth === "bearer" ? [{ bearer: [] }] : []),
+      ...(opts.oauth ? [{ oauth2: [SCOPE_RECALL] }] : []),
+    ],
     defaultInputModes: ["text/plain", "application/json"],
     defaultOutputModes: ["application/json"],
     skills: [

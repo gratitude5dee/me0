@@ -217,7 +217,7 @@ describe("message/send", () => {
 
   test("non-loopback bind without a token is refused", () => {
     expect(() => startA2AServer(store.db, { ...opts, hostname: "0.0.0.0" })).toThrow(
-      /bearer token/,
+      /without auth/,
     );
   });
 

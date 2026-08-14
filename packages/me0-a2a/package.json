@@ -5,6 +5,7 @@
   "license": "MIT",
   "main": "src/index.ts",
   "dependencies": {
+    "jose": "6.2.8",
     "me0-core": "workspace:*",
     "mongodb": "^6.12.0"
   },

@@ -246,10 +246,20 @@ Shipped:
 
 - **me0-rfm (predictive layer)** — `me0 rfm --out <dir>` exports RFM-friendly flat tables under `<dir>/rfm/` (JSONL: `users`, `memories`, `entities`, `edges`, `sessions`, `tool_calls`, `outcomes`, `retrievals`; redacted structure-only by default, `--no-redact` to keep text) for the KumoRFM LocalGraph bridge, and writes deterministic **heuristic predictions** (`retrieval_utility` = used/surfaced ratio, `prefetch` = recency×frequency, `forget` = Ebbinghaus decay from last retrieval or creation) into `predictions` — consumed opportunistically by retrieval ranking. PQL sketches per task live in `packages/me0-rfm/src/pql.ts`. RFM is an enhancement tier, never a dependency. `me0 dream --rfm` runs it after consolidation.
 - **A2A endpoint** (`me0 serve --a2a [--port 4160] [--host <addr>] [--a2a-token <tok>] [--url <public-url>]`) — Agent Card at `/.well-known/agent-card.json` with skills `memory.recall`, `memory.context_pack`, `memory.synthesize`, plus the `https://me0.dev/a2a/ext/memory-profile/v1` extension returning a redacted, budgeted profile pack as a DataPart. Hard rules: A2A callers are `remote` — visibility ceiling `world`, identity card and episode summaries suppressed, local-only verbs rejected, no telemetry mutation, every call audited. Hardened by default: loopback bind unless a bearer token is set (`--a2a-token` / `ME0_A2A_TOKEN`, constant-time compared), 64 KiB byte-enforced body limit, capped parts/budgets/queries, generic remote errors. Put public deployments behind a TLS-terminating reverse proxy.
+- **A2A OAuth 2.1 (resource server)** — the endpoint validates OAuth 2.1 Bearer JWT access tokens (RS256/ES256 via `jose`): signature against the IdP's JWKS (cached, kid-based rotation refetch with a rate cap), plus `iss`, `aud`, `exp`, `nbf`. Configure with `--oauth-issuer <url> --oauth-audience <aud>` (env: `ME0_A2A_OAUTH_ISSUER`/`ME0_A2A_OAUTH_AUDIENCE`); the JWKS URI is discovered from `<issuer>/.well-known/oauth-authorization-server` (or OIDC discovery), or set explicitly with `--oauth-jwks <url>` (`ME0_A2A_OAUTH_JWKS`). Scopes: `me0.recall` gates the memory skills, `me0.profile` gates the memory-profile extension — missing scope ⇒ 403 JSON-RPC error with an `insufficient_scope` challenge; invalid/expired tokens ⇒ 401 with a `WWW-Authenticate` header (RFC 6750). Auth mode is selected with `--auth-mode token|oauth|either` (`ME0_A2A_AUTH_MODE`, defaults from which credentials are configured); the static token remains supported for simple deployments and both schemes are advertised in the Agent Card's `securitySchemes`. Validation fails closed and error bodies stay generic; the token `sub` is recorded as the remote actor in every audit record.
+
+  ```bash
+  # example: Auth0/Keycloak/any OAuth 2.1 IdP issuing JWT access tokens
+  me0 serve --a2a --host 0.0.0.0 \
+    --oauth-issuer https://idp.example.com \
+    --oauth-audience https://me0.example.com \
+    --auth-mode oauth
+  # grant peers the scopes: me0.recall me0.profile
+  ```
 
 ## 🗺️ Roadmap
 
-- **v0.3+ (remaining):** native KumoRFM execution via the official SDK/MCP bridge, `$vectorSearch` + Voyage automated embeddings, native `$rankFusion`, `$graphLookup` recall arm, TTL + time-series + change streams, LLM session-end extraction (`method: "llm"` provenance is already in the schema), A2A OAuth 2.1.
+- **v0.3+ (remaining):** native KumoRFM execution via the official SDK/MCP bridge, `$vectorSearch` + Voyage automated embeddings, native `$rankFusion`, `$graphLookup` recall arm, TTL + time-series + change streams, LLM session-end extraction (`method: "llm"` provenance is already in the schema).
 - **v1.0 — the standard candle:** MEMORY_VERBS conformance certification, marketplace listings, stability guarantees, published benchmark results.
 
 ## 📁 Repository layout
