@@ -40,6 +40,13 @@ description: How to run and end-to-end test the me0 memory layer (CLI, MCP serve
 - `me0 hook prompt '{"prompt":"...","episode_id":"ep_..."}'` emits UserPromptSubmit `<me0-push>` JSON only when a matching memory clears the 0.7 confidence gate (seed one via `me0 op remember` first); `me0 hook session-end '{"episode_id":...,"summary":...,"success":true}'` ends the episode.
 - `me0 op episode_log` requires `episode_id` in the JSON args — the `ME0_EPISODE_ID` env var is NOT used as an arg default.
 
+## A2A OAuth (PR #16+)
+- Serve with OAuth: `bun packages/me0-cli/src/main.ts serve --a2a --a2a-port 4160 --oauth-issuer <iss> --oauth-audience <aud> --oauth-jwks <jwks-url> [--a2a-token <tok>] [--auth-mode token|oauth|either]` (env: ME0_A2A_OAUTH_ISSUER/AUDIENCE/JWKS, ME0_A2A_AUTH_MODE). Mode defaults: both set → either.
+- No real IdP needed: with jose, `generateKeyPair("RS256", { extractable: true })` (extractable is required in Bun or exportPKCS8 throws), export the public JWK with a `kid`, serve `{keys:[...]}` from a tiny Bun.serve, mint tokens with SignJWT (set iss/aud/sub/exp, `scope` claim as space-separated string, protected header `kid` matching the JWKS). Mirror `packages/me0-a2a/test/oauth.test.ts`.
+- Expected wire behavior: no token → 401 `WWW-Authenticate: Bearer realm="me0"`; expired/bad token → 401 with `error="invalid_token"`; valid JWT missing `me0.recall` → HTTP 403 + JSON-RPC error -32003 "insufficient scope" + `error="insufficient_scope", scope="me0.recall"`; memory-profile extension needs `me0.profile`. Audit docs get `actor.sub` from the JWT.
+- Agent card (`/.well-known/agent-card.json`) advertises `securitySchemes.oauth2` (clientCredentials flow, scopes me0.recall/me0.profile) alongside `bearer` when a static token is set.
+- Cosmetic: the serve startup log prints "static bearer token or OAuth 2.1 JWT" whenever both are configured, even with `--auth-mode token` — enforcement still follows authMode.
+
 ## Gotchas
 - README quickstart's root-level `bun link @wzrdtech/me0 && bun link @wzrdtech/me0-mcp` fails on a fresh clone ("Package is not linked") — you must run bare `bun link` inside each package dir first. Also, root-level `bun link <name>` mutates the root package.json (adds `link:` deps) — restore with git checkout if dirtied.
 - Since the npm-publish rename (package `me0-cli` → `@wzrdtech/me0`, bin → `dist/main.js`), run `bun run build` inside each package before linking — the bins point at `dist/`. Stale bun links from older checkouts can hang silently: `rm ~/.bun/bin/me0*` and re-link.
