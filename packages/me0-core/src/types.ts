@@ -83,6 +83,8 @@ export interface MemoryDoc {
   /** BSON Date set on soft-delete; the ttl_purge_at TTL index hard-purges on it */
   purge_at?: Date | null;
   prov: Provenance;
+  embedding?: number[];
+  embedding_model?: string;
 }
 
 export interface EpisodeDoc {
@@ -138,7 +140,13 @@ export interface AuditDoc {
   diff_summary: string;
 }
 
-export type Evidence = "alias_hit" | "exact_title" | "high_vector" | "keyword" | "weak_semantic";
+export type Evidence =
+  | "alias_hit"
+  | "exact_title"
+  | "graph_hit"
+  | "high_vector"
+  | "keyword"
+  | "weak_semantic";
 export type CreateSafety = "exists" | "probable" | "unknown";
 
 export interface OperationContext {
