@@ -17,13 +17,9 @@ available:
 
 ```yaml
 initialize: |
-  curl -fsSL https://bun.sh/install | bash
   docker pull mongo:8
 maintenance: |
-  git clone https://github.com/gratitude5dee/me0 ~/me0 || (cd ~/me0 && git pull)
-  (cd ~/me0 && bun install)
-  (cd ~/me0/packages/me0-cli && bun link)
-  (cd ~/me0/packages/me0-mcp && bun link)
+  npm i -g me0 me0-mcp
 knowledge:
   - name: me0
     contents: |

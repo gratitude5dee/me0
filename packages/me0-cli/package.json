@@ -1,17 +1,31 @@
 {
-  "name": "me0-cli",
+  "name": "me0",
   "version": "0.1.0",
+  "description": "me0 — the zeroth memory layer: user-owned memory substrate for agent harnesses (CLI)",
   "type": "module",
   "license": "MIT",
-  "bin": { "me0": "src/main.ts" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gratitude5dee/me0.git",
+    "directory": "packages/me0-cli"
+  },
+  "keywords": ["memory", "agents", "mcp", "claude-code", "codex", "devin", "mongodb"],
+  "bin": { "me0": "dist/main.js" },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=18" },
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "rm -rf dist && bun build src/main.ts --target=node --outdir dist --splitting --external mongodb && bun ../../scripts/shebang.ts dist/main.js",
+    "prepublishOnly": "bun run build"
+  },
   "dependencies": {
-    "me0-a2a": "workspace:*",
-    "me0-core": "workspace:*",
-    "me0-rfm": "workspace:*",
     "mongodb": "^6.12.0"
   },
   "devDependencies": {
     "bun-types": "^1.1.0",
+    "me0-a2a": "workspace:*",
+    "me0-core": "workspace:*",
+    "me0-rfm": "workspace:*",
     "mongodb-memory-server": "^10.1.3"
   }
 }

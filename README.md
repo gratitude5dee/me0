@@ -135,16 +135,22 @@ me0 doesn't sit *next to* a database — the memory semantics are built out of M
 ## ⚡ Quickstart (60 seconds)
 
 ```bash
-git clone https://github.com/gratitude5dee/me0 && cd me0
-bun install
-(cd packages/me0-cli && bun link) && (cd packages/me0-mcp && bun link)   # register the binaries
-bun link me0-cli && bun link me0-mcp                                     # put `me0` + `me0-mcp` on PATH
-
 # storage: any MongoDB — local Docker is the free floor
 docker run -d --name me0-mongo -p 27017:27017 mongo:8
 
-me0 init --uri mongodb://127.0.0.1:27017 --user me --name "Your Name"
-me0 verify        # exit 0 = write → recall → pack round-trip healthy
+npx me0 init --uri mongodb://127.0.0.1:27017 --user me --name "Your Name"
+npx me0 verify    # exit 0 = write → recall → pack round-trip healthy
+```
+
+Or install globally: `npm i -g me0 me0-mcp` (puts `me0` + `me0-mcp` on PATH; Node ≥18, no Bun needed — `me0 serve` and `import-hermes` are the only Bun-required commands).
+
+From source (contributors):
+
+```bash
+git clone https://github.com/gratitude5dee/me0 && cd me0
+bun install
+(cd packages/me0-cli && bun link) && (cd packages/me0-mcp && bun link)   # register the binaries
+bun link me0 && bun link me0-mcp                                         # put `me0` + `me0-mcp` on PATH
 ```
 
 `me0 init` detects your installed harnesses and wires them in place — Codex (`~/.codex/config.toml` MCP entry + `AGENTS.md` preamble), pi (`~/.pi/agent/extensions/me0.ts`), OpenClaw (`plugins.entries.me0` in `openclaw.json`) — and prints the Claude Code plugin instructions. `me0 doctor` diagnoses drift.

@@ -1,14 +1,29 @@
 {
   "name": "me0-mcp",
   "version": "0.1.0",
+  "description": "me0 stdio MCP server — expose the me0 memory verbs to any MCP client",
   "type": "module",
   "license": "MIT",
-  "bin": { "me0-mcp": "src/server.ts" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gratitude5dee/me0.git",
+    "directory": "packages/me0-mcp"
+  },
+  "keywords": ["memory", "agents", "mcp", "mongodb"],
+  "bin": { "me0-mcp": "dist/server.js" },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=18" },
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "rm -rf dist && bun build src/server.ts --target=node --outdir dist --external mongodb --external @modelcontextprotocol/sdk && bun ../../scripts/shebang.ts dist/server.js",
+    "prepublishOnly": "bun run build"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "me0-core": "workspace:*"
+    "mongodb": "^6.12.0"
   },
   "devDependencies": {
-    "bun-types": "^1.1.0"
+    "bun-types": "^1.1.0",
+    "me0-core": "workspace:*"
   }
 }
