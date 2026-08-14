@@ -483,12 +483,13 @@ async function cmdServe(args: string[]) {
   console.log(
     `me0 A2A endpoint listening on ${server.url} (agent card: ${server.url}.well-known/agent-card.json)`,
   );
+  const mode = authMode ?? (token && oauth ? "either" : oauth ? "oauth" : token ? "token" : "none");
   const authDesc =
-    token && oauth
+    mode === "either"
       ? "static bearer token or OAuth 2.1 JWT"
-      : oauth
+      : mode === "oauth" && oauth
         ? `OAuth 2.1 JWT (issuer: ${oauth.issuer})`
-        : token
+        : mode === "token"
           ? "bearer token required"
           : "none (loopback only) \u2014 remote callers still see world-visibility memories only";
   console.log(`auth: ${authDesc}`);
