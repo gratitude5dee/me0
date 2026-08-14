@@ -57,8 +57,10 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
   const preds: PredictionDoc[] = [];
   for (const m of memories) {
     const tel = surfaced.get(m.memory_id);
-    // retrieval_utility: historical used/surfaced ratio (weakly optimistic prior)
-    if (tel && tel.surfaced > 0) {
+    // retrieval_utility: historical used/surfaced ratio. Only written when
+    // positive `used` telemetry exists — with `used` unset the ratio would
+    // decay with surfacing count and invert the ranking signal.
+    if (tel && tel.used > 0) {
       preds.push({
         subject_type: "memory",
         subject_id: m.memory_id,
@@ -94,11 +96,19 @@ export async function runHeuristics(db: Db, ctx: OperationContext): Promise<Heur
     });
   }
 
+  // replace prior heuristic predictions for all of the user's memories,
+  // including deleted/superseded ones so stale scores don't accumulate
+  const allIds = await db
+    .collection<MemoryDoc>("memories")
+    .find({ user_id: ctx.user_id })
+    .project<{ memory_id: string }>({ memory_id: 1 })
+    .map((m) => m.memory_id)
+    .toArray();
   const col = db.collection("predictions");
-  if (memoryIds.length > 0) {
+  if (allIds.length > 0) {
     await col.deleteMany({
       subject_type: "memory",
-      subject_id: { $in: memoryIds },
+      subject_id: { $in: allIds },
       model: "heuristic",
     });
   }

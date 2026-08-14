@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Me0Engine, type OperationContext, type Store, connect, ensureCollections } from "me0-core";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { MEMORY_PROFILE_EXTENSION_URI, handleA2ARequest } from "../src/index.js";
+import { MEMORY_PROFILE_EXTENSION_URI, handleA2ARequest, startA2AServer } from "../src/index.js";
 
 let mongod: MongoMemoryServer;
 let store: Store;
@@ -191,6 +191,27 @@ describe("message/send", () => {
       rpc({ message: { parts: [{ kind: "text", text: "hi" }] } }, "sekrit"),
     );
     expect(allowed.status).toBe(200);
+  });
+
+  test("non-loopback bind without a token is refused", () => {
+    expect(() => startA2AServer(store.db, { ...opts, hostname: "0.0.0.0" })).toThrow(
+      /bearer token/,
+    );
+  });
+
+  test("internal errors are not disclosed to peers", async () => {
+    // a closed connection makes the engine throw with driver details
+    const brokenStore = await connect(mongod.getUri());
+    const db = brokenStore.db;
+    await brokenStore.close();
+    const res = await handleA2ARequest(
+      db,
+      opts,
+      rpc({ message: { parts: [{ kind: "text", text: "hi" }] } }),
+    );
+    const body = (await res.json()) as { error: { code: number; message: string } };
+    expect(body.error.code).toBe(-32000);
+    expect(body.error.message).toBe("internal error");
   });
 
   test("unknown methods and malformed json get JSON-RPC errors", async () => {

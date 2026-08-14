@@ -10,6 +10,8 @@ export interface A2AServerOptions {
   token?: string;
   /** public base url advertised on the agent card */
   url?: string;
+  /** bind address; defaults to loopback — non-loopback binds require a token */
+  hostname?: string;
 }
 
 interface JsonRpcRequest {
@@ -147,14 +149,23 @@ export async function handleA2ARequest(
 
     return rpcError(rpc.id, -32602, "message has no usable parts");
   } catch (err) {
-    return rpcError(rpc.id, -32000, err instanceof Error ? err.message : String(err));
+    // never disclose internal error details (driver/collection info) to peers
+    console.error("[me0-a2a] internal error:", err);
+    return rpcError(rpc.id, -32000, "internal error");
   }
 }
 
 export function startA2AServer(db: Db, opts: A2AServerOptions) {
   const port = opts.port ?? 4160;
+  const hostname = opts.hostname ?? "127.0.0.1";
+  if (hostname !== "127.0.0.1" && hostname !== "localhost" && !opts.token) {
+    throw new Error(
+      `refusing to bind A2A server to ${hostname} without a bearer token (set --a2a-token or ME0_A2A_TOKEN)`,
+    );
+  }
   return Bun.serve({
     port,
+    hostname,
     fetch: (req) => handleA2ARequest(db, { ...opts, port }, req),
   });
 }

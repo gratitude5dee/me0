@@ -111,4 +111,22 @@ describe("heuristics", () => {
     const after = await store.db.collection("predictions").countDocuments({ model: "heuristic" });
     expect(after).toBe(before);
   });
+
+  test("predictions for forgotten memories are cleaned up on re-run", async () => {
+    const doomed = (await engine.remember(ctx, {
+      text: "temporary scratch note",
+      kind: "fact",
+    })) as {
+      memory_id: string;
+    };
+    await runHeuristics(store.db, ctx);
+    expect(
+      await store.db.collection("predictions").countDocuments({ subject_id: doomed.memory_id }),
+    ).toBeGreaterThan(0);
+    await engine.forget(ctx, { memory_id: doomed.memory_id });
+    await runHeuristics(store.db, ctx);
+    expect(
+      await store.db.collection("predictions").countDocuments({ subject_id: doomed.memory_id }),
+    ).toBe(0);
+  });
 });
