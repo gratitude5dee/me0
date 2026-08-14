@@ -81,6 +81,8 @@ export interface MemoryDoc {
   access: { count: number; last_retrieved_at: string | null };
   deleted_at: string | null;
   prov: Provenance;
+  embedding?: number[];
+  embedding_model?: string;
 }
 
 export interface EpisodeDoc {
@@ -136,7 +138,13 @@ export interface AuditDoc {
   diff_summary: string;
 }
 
-export type Evidence = "alias_hit" | "exact_title" | "high_vector" | "keyword" | "weak_semantic";
+export type Evidence =
+  | "alias_hit"
+  | "exact_title"
+  | "graph_hit"
+  | "high_vector"
+  | "keyword"
+  | "weak_semantic";
 export type CreateSafety = "exists" | "probable" | "unknown";
 
 export interface OperationContext {

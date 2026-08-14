@@ -9,12 +9,16 @@ import {
   type Store,
   connect,
   discoverContextFiles,
+  embedBackfill,
   ensureCollections,
+  getEmbedder,
   importClaudeDir,
   importContextFiles,
   importDevinSession,
   invoke,
   operations,
+  supportsNativeRankFusion,
+  vectorSearchIndex,
 } from "me0-core";
 import { exportTables, runHeuristics } from "me0-rfm";
 import { configDir, loadConfig, saveConfig } from "./config.js";
@@ -41,6 +45,8 @@ commands:
   import-openclaw  backfill an OpenClaw workspace (MEMORY.md, memory/*.md, USER.md, SOUL.md) [--dir <workspace>]
   import-devin    backfill a Devin session export (JSON) as an episode: --in <file>
                   (export shape: { session_id, title, events: [...] } from the Devin session-events API)
+  embed-backfill  embed memories missing vectors in batches (requires ME0_VOYAGE_API_KEY
+            or voyage_api_key in config) [--batch <n>]
   dream     consolidation pass: purge, dedupe, decay tiers, recompile cards, refresh packs
             (--rfm also scores predictions: heuristic prefetch/forget/retrieval-utility)
   rfm       predictive layer: export flat tables (--out <dir>, --no-redact) + write heuristic
@@ -190,6 +196,29 @@ async function cmdDoctor(args: string[]) {
       ? "openclaw: wired"
       : "openclaw: not wired",
   );
+  const embedder = getEmbedder();
+  console.log(
+    embedder
+      ? `embeddings: configured (model: ${embedder.model})`
+      : "embeddings: not configured (set ME0_VOYAGE_API_KEY or voyage_api_key in config)",
+  );
+  const vsIndex = vectorSearchIndex();
+  console.log(
+    vsIndex
+      ? `vector search: Atlas index "${vsIndex}"`
+      : `vector search: no Atlas index (${embedder ? "exact cosine fallback active" : "disabled"})`,
+  );
+  try {
+    await withEngine(uri, async (_engine, db) => {
+      console.log(
+        (await supportsNativeRankFusion(db))
+          ? "rank fusion: native $rankFusion (MongoDB 8.1+)"
+          : "rank fusion: in-process reciprocal-rank fusion",
+      );
+    });
+  } catch {
+    console.log("rank fusion: unknown (mongodb unreachable)");
+  }
   process.exit(ok ? 0 : 1);
 }
 
@@ -397,6 +426,25 @@ async function cmdImportDevin(args: string[]) {
   });
 }
 
+async function cmdEmbedBackfill(args: string[]) {
+  const cfg = loadConfig();
+  const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
+  const userId = flag(args, "--user") ?? cfg.user_id;
+  const batchSize = Number(flag(args, "--batch") ?? 32);
+  if (!getEmbedder()) {
+    console.error(
+      "embed-backfill: no embedder configured (set ME0_VOYAGE_API_KEY or voyage_api_key in config)",
+    );
+    process.exit(1);
+  }
+  await withEngine(uri, async (_engine, db) => {
+    const r = await embedBackfill(db, userId, { batchSize });
+    console.log(
+      `embed-backfill: ${r.embedded} embedded, ${r.failed} failed, ${r.remaining} remaining (scanned ${r.scanned})`,
+    );
+  });
+}
+
 async function cmdDream(args: string[]) {
   const cfg = loadConfig();
   const uri = flag(args, "--uri") ?? cfg.mongodb_uri;
@@ -597,6 +645,8 @@ async function main() {
       return cmdImportOpenClaw(args);
     case "import-devin":
       return cmdImportDevin(args);
+    case "embed-backfill":
+      return cmdEmbedBackfill(args);
     case "dream":
       return cmdDream(args);
     case "rfm":
