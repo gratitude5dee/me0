@@ -52,6 +52,7 @@ commands:
   rfm       predictive layer: export flat tables (--out <dir>, --no-redact) + write heuristic
             predictions; PQL sketches for the KumoRFM bridge documented in me0-rfm
   serve     HTTP serving layer: me0 serve --a2a [--port 4160] [--a2a-token <tok>] [--host 127.0.0.1]
+            OAuth 2.1: [--oauth-issuer <url> --oauth-audience <aud> [--oauth-jwks <url>] [--auth-mode token|oauth|either]]
             [--url <public-base-url>] (binds loopback by default; non-loopback --host requires a
             bearer token; --url sets the endpoint advertised on the agent card)
   op        invoke any verb directly: me0 op <name> '<json-args>'
@@ -499,17 +500,47 @@ async function cmdServe(args: string[]) {
   const token = flag(args, "--a2a-token") ?? process.env.ME0_A2A_TOKEN;
   const hostname = flag(args, "--host") ?? "127.0.0.1";
   const publicUrl = flag(args, "--url") ?? process.env.ME0_A2A_URL;
+  const oauthIssuer = flag(args, "--oauth-issuer") ?? process.env.ME0_A2A_OAUTH_ISSUER;
+  const oauthAudience = flag(args, "--oauth-audience") ?? process.env.ME0_A2A_OAUTH_AUDIENCE;
+  const oauthJwks = flag(args, "--oauth-jwks") ?? process.env.ME0_A2A_OAUTH_JWKS;
+  const authModeFlag = flag(args, "--auth-mode") ?? process.env.ME0_A2A_AUTH_MODE;
+  if ((oauthIssuer && !oauthAudience) || (!oauthIssuer && oauthAudience)) {
+    console.error("OAuth requires both --oauth-issuer and --oauth-audience");
+    process.exit(1);
+  }
+  if (authModeFlag && !["token", "oauth", "either"].includes(authModeFlag)) {
+    console.error("--auth-mode must be token, oauth, or either");
+    process.exit(1);
+  }
+  const oauth =
+    oauthIssuer && oauthAudience
+      ? { issuer: oauthIssuer, audience: oauthAudience, jwksUri: oauthJwks }
+      : undefined;
+  const authMode = authModeFlag as "token" | "oauth" | "either" | undefined;
   const store = await connect(uri);
   await ensureCollections(store.db);
-  const server = startA2AServer(store.db, { userId, port, token, hostname, url: publicUrl });
+  const server = startA2AServer(store.db, {
+    userId,
+    port,
+    token,
+    hostname,
+    url: publicUrl,
+    oauth,
+    authMode,
+  });
   console.log(
     `me0 A2A endpoint listening on ${server.url} (agent card: ${server.url}.well-known/agent-card.json)`,
   );
-  console.log(
-    token
-      ? "auth: bearer token required"
-      : "auth: none (loopback only) \u2014 remote callers still see world-visibility memories only",
-  );
+  const mode = authMode ?? (token && oauth ? "either" : oauth ? "oauth" : token ? "token" : "none");
+  const authDesc =
+    mode === "either"
+      ? "static bearer token or OAuth 2.1 JWT"
+      : mode === "oauth" && oauth
+        ? `OAuth 2.1 JWT (issuer: ${oauth.issuer})`
+        : mode === "token"
+          ? "bearer token required"
+          : "none (loopback only) \u2014 remote callers still see world-visibility memories only";
+  console.log(`auth: ${authDesc}`);
 }
 
 async function cmdOp(args: string[]) {
