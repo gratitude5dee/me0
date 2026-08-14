@@ -191,6 +191,36 @@ describe("extractEpisode", () => {
     expect(typeof episode?.extracted_at).toBe("string");
   });
 
+  test("resolves extracted entity names into entity_refs (auto-created entities)", async () => {
+    const epId = await startEpisode();
+    const provider = fakeProvider(
+      JSON.stringify([
+        {
+          text: "The Acme project deploys through Vercel",
+          kind: "fact",
+          confidence: 0.9,
+          entities: ["Acme Project", "Vercel"],
+        },
+      ]),
+    );
+    const r = await extractEpisode(db, ctx, epId, provider);
+    expect(r.added).toBe(1);
+    const mem = await db
+      .collection<MemoryDoc>("memories")
+      .findOne({ user_id: ctx.user_id, memory_id: r.memory_ids[0] });
+    expect(mem?.entity_refs).toHaveLength(2);
+    const ents = await db
+      .collection("entities")
+      .find({ user_id: ctx.user_id, entity_id: { $in: mem?.entity_refs ?? [] } })
+      .toArray();
+    expect(ents.map((e) => e.slug).sort()).toEqual(["acme-project", "vercel"]);
+    // re-extraction reuses the same entities instead of duplicating them
+    await extractEpisode(db, ctx, epId, provider);
+    expect(
+      await db.collection("entities").countDocuments({ user_id: ctx.user_id, slug: "vercel" }),
+    ).toBe(1);
+  });
+
   test("re-extraction is idempotent via normalized dedupe", async () => {
     const epId = await startEpisode();
     const provider = fakeProvider(

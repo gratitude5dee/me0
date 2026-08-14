@@ -51,7 +51,7 @@ commands:
             or voyage_api_key in config) [--batch <n>]
   dream     consolidation pass: purge, dedupe, decay tiers, recompile cards, refresh packs
             (--rfm also scores predictions: heuristic prefetch/forget/retrieval-utility;
-            also LLM-extracts recently-ended unextracted episodes when an LLM is configured)
+            --extract also LLM-extracts recently-ended unextracted episodes when an LLM is configured)
   extract   LLM session-end extraction: distill durable memories from an episode's event log
             (prov.method "llm"): me0 extract --episode <id> | me0 extract --all
             config: ME0_LLM_BASE_URL, ME0_LLM_MODEL, ME0_LLM_API_KEY (or llm_* in config.json)
@@ -460,7 +460,7 @@ async function cmdDream(args: string[]) {
   const userId = flag(args, "--user") ?? cfg.user_id;
   await withEngine(uri, async (engine, db) => {
     const report = await engine.dream(ctxFor(userId));
-    await dreamExtractStep(db, ctxFor(userId));
+    if (args.includes("--extract")) await dreamExtractStep(db, ctxFor(userId));
     console.log(
       `dream: purged ${report.purged}, deduped ${report.deduped}, promoted ${report.promoted}, demoted ${report.demoted}, identity_card ${report.identity_card_refreshed ? "refreshed" : "unchanged"}, packs refreshed ${report.packs_refreshed}`,
     );
