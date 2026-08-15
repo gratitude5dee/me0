@@ -214,6 +214,7 @@ async function vectorArmLookup(
   db: Db,
   filter: Record<string, unknown>,
   queryVector: number[],
+  embeddingModel: string,
   pool: number,
 ): Promise<{ arm: MemoryDoc[]; sims: Map<string, number> }> {
   const sims = new Map<string, number>();
@@ -249,7 +250,7 @@ async function vectorArmLookup(
   }
   try {
     const candidates = (await memories
-      .find({ ...filter, embedding: { $exists: true } })
+      .find({ ...filter, embedding: { $exists: true }, embedding_model: embeddingModel })
       .limit(VECTOR_CANDIDATE_CAP)
       .toArray()) as MemoryDoc[];
     const scored = candidates
@@ -441,8 +442,8 @@ export async function hybridRecall(
 
     // arm 4: vector arm ($vectorSearch or exact cosine fallback)
     let vectorArm: MemoryDoc[] = [];
-    if (queryVector) {
-      const v = await vectorArmLookup(db, filter, queryVector, pool);
+    if (queryVector && embedder) {
+      const v = await vectorArmLookup(db, filter, queryVector, embedder.model, pool);
       vectorArm = v.arm;
       for (const [id, sim] of v.sims) vectorSims.set(id, sim);
     }
@@ -451,6 +452,12 @@ export async function hybridRecall(
     addArm(keywordArm);
     addArm(entityArm);
     addArm(vectorArm);
+  } else if (queryVector && embedder && !vectorSearchIndex()) {
+    // native fusion had no vector pipeline (no Atlas index) — the exact cosine
+    // fallback still contributes a vector arm so semantic recall keeps working
+    const v = await vectorArmLookup(db, filter, queryVector, embedder.model, pool);
+    for (const [id, sim] of v.sims) vectorSims.set(id, sim);
+    addArm(v.arm);
   }
 
   // arm 5: $graphLookup graph arm — memories of entities near the seeds

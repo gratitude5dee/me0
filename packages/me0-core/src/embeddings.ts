@@ -100,8 +100,11 @@ export interface BackfillReport {
 }
 
 /**
- * Embed memories that are missing vectors, in batches. Fail-open per batch:
- * a failing batch is counted and skipped, never thrown.
+ * Embed memories that are missing vectors (or carry a vector from a different
+ * model than the active one), in batches. Fail-open per batch: a failing
+ * batch is counted and skipped, never thrown. Batches advance via a
+ * `memory_id` cursor, so each memory is attempted exactly once per run and
+ * query size stays constant regardless of how many attempts fail.
  */
 export async function embedBackfill(
   db: Db,
@@ -111,21 +114,31 @@ export async function embedBackfill(
   const embedder = getEmbedder();
   const report: BackfillReport = { scanned: 0, embedded: 0, failed: 0, remaining: 0 };
   const memories = db.collection<MemoryDoc>("memories");
-  const filter = {
-    user_id: userId,
-    deleted_at: null,
-    valid_until: null,
-    embedding: { $exists: false },
-  };
+  const base = { user_id: userId, deleted_at: null, valid_until: null };
+  const needsEmbedding = (model: string) => ({
+    ...base,
+    $or: [{ embedding: { $exists: false } }, { embedding_model: { $ne: model } }],
+  });
   if (!embedder) {
-    report.remaining = await memories.countDocuments(filter);
+    report.remaining = await memories.countDocuments({
+      ...base,
+      embedding: { $exists: false },
+    });
     return report;
   }
+  const filter = needsEmbedding(embedder.model);
   const batchSize = Math.max(1, opts.batchSize ?? 32);
   const maxBatches = opts.maxBatches ?? Number.POSITIVE_INFINITY;
+  let cursor = "";
   for (let i = 0; i < maxBatches; i++) {
-    const batch = await memories.find(filter).limit(batchSize).toArray();
+    const batch = await memories
+      .find({ ...filter, memory_id: { $gt: cursor } })
+      .sort({ memory_id: 1 })
+      .limit(batchSize)
+      .toArray();
     if (batch.length === 0) break;
+    const last = batch[batch.length - 1];
+    if (last) cursor = last.memory_id;
     report.scanned += batch.length;
     let vectors: number[][];
     try {
