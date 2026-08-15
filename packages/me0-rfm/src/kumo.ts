@@ -271,6 +271,13 @@ export class KumoBackend implements PredictionBackend {
         });
       }
 
+      // a run that produced no usable scores must not wipe existing ones —
+      // surface an error instead (explicit runs report it; automated runs
+      // fall back to heuristics, which rescore everything)
+      if (preds.length === 0) {
+        throw new Error("kumo returned no usable predictions; existing scores left untouched");
+      }
+
       // replace ALL prior predictions (any model) for the user's memories so
       // exactly one score exists per (memory, task) and retrieval stays
       // deterministic; latest backend run wins
@@ -287,7 +294,7 @@ export class KumoBackend implements PredictionBackend {
           subject_id: { $in: allIds },
         });
       }
-      if (preds.length > 0) await col.insertMany(preds);
+      await col.insertMany(preds);
 
       return {
         backend: "kumo",
